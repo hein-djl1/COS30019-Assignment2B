@@ -8,7 +8,7 @@ from algorithms.gbfs import gbfs
 # from algorithms.cus1 import cus1
 # from algorithms.cus2 import cus2
 
-ALGORITHMS = {
+algorithms = {
     "GBFS": gbfs,
     # "DFS":  dfs,
     # "BFS":  bfs,
@@ -21,19 +21,19 @@ ALGORITHMS = {
 def main():
     if len(sys.argv) != 3:
         print("Usage: python search.py <filename> <method>")
-        print("Supported methods:", ", ".join(ALGORITHMS))
+        print("Supported methods:", ", ".join(algorithms))
         sys.exit(1)
 
     filename = sys.argv[1]
     method   = sys.argv[2].upper()
 
-    if method not in ALGORITHMS:
+    if method not in algorithms:
         print(f"Method '{method}' not recognised or not yet implemented.")
-        print("Supported methods:", ", ".join(ALGORITHMS))
+        print("Supported methods:", ", ".join(algorithms))
         sys.exit(1)
 
     graph = parse_file(filename)
-    goal, nodes_created, path = ALGORITHMS[method](graph)
+    goal, nodes_created, path = algorithms[method](graph)
 
     print(filename, method)
     if goal is None:

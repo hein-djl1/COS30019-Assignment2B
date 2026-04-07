@@ -27,8 +27,6 @@ def parse_file(filepath):
         elif line == "Destinations:":
             current_section = "destinations"
 
-        # Parse a node line, e.g.  "1: (4,1)"
-        # this means node 1 is at coordinates (4,1)
         elif current_section == "nodes":
             node_id, coords = line.split(":")
             node_id = int(node_id.strip())
@@ -36,8 +34,6 @@ def parse_file(filepath):
             x, y = coords.split(",")
             graph.add_node(node_id, float(x), float(y))
 
-        # Parse an edge line, e.g.  "(2,1): 4"
-        # this means there is an edge from node 2 to node 1 with a cost of 4
         elif current_section == "edges":
             from_to, cost = line.split(":")
             # from_to = "(2,1)"   cost = " 4"
@@ -46,14 +42,10 @@ def parse_file(filepath):
             cost = float(cost.strip())
             graph.add_edge(int(from_id), int(to_id), cost)
 
-        # parse the origin line, e.g.  "2"
-        # this sets the graph's origin node
         elif current_section == "origin":
             origin_id = int(line)
             graph.origin = graph.nodes[origin_id]
 
-        # parse destinations line, e.g.  "5; 4"
-        # this sets the graph's destination nodes
         elif current_section == "destinations":
             dest_ids = line.split(";")
             for dest_id in dest_ids:
