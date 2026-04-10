@@ -4,7 +4,7 @@ from parser import parse_file
 from algorithms.gbfs import gbfs
 from algorithms.dfs  import dfs
 # from algorithms.bfs  import bfs
-# from algorithms.astar import astar
+from algorithms.astar import astar
 # from algorithms.cus1 import cus1
 # from algorithms.cus2 import cus2
 
@@ -12,7 +12,7 @@ algorithms = {
     "GBFS": gbfs,
     "DFS":  dfs,
     # "BFS":  bfs,
-    # "AS":   astar,
+    "AS":   astar,
     # "CUS1": cus1,
     # "CUS2": cus2,
 }
