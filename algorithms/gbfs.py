@@ -29,7 +29,17 @@ def gbfs(graph):
     nodes_created = 1
 
     while frontier:
-        _, _, current = heapq.heappop(frontier)
+
+        # debugging lines to show the frontier before popping
+        #print(f"Frontier before popping: {[(item[0], item[1]) for item in frontier]}")  
+        
+        h_val, _, current = heapq.heappop(frontier)
+
+        # Debugging line to show the current node being expanded and the contents of the frontier
+        # Create a clean list of what is waiting in the queue: (heuristic, node_id)
+        #waiting_nodes = [(item[0], item[1]) for item in frontier]
+        
+        #print(f"Expanding Node: {current.state.id} (h={h_val:.1f}) | Frontier holds: {waiting_nodes}")
 
         if graph.is_goal(current.state):
             return current.state.id, nodes_created, current.get_path()
