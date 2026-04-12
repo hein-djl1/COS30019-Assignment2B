@@ -1,6 +1,6 @@
 from node import SearchNode
 
-DEBUG = True
+DEBUG = False
 
 def dfs(graph):
     # get the starting node from the graph
