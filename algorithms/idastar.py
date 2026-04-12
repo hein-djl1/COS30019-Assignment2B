@@ -2,6 +2,31 @@ from node import SearchNode
 from heuristic import nearest_goal_dist
 
 
+def ida_star(graph):
+    start = graph.origin
+    goals = graph.destinations
+
+    start_node = SearchNode(state=start, parent=None, action=None, path_cost=0)
+
+    threshold = nearest_goal_dist(start, goals)
+    nodes_created = 1
+
+    while True:
+        path_ids = {start.id}
+    
+        result, new_threshold, nodes_created = search(
+            start_node, graph, goals, threshold, path_ids, nodes_created
+        )
+
+        if result is not None:
+            return result.state.id, nodes_created, result.get_path()
+
+        if new_threshold == float("inf"):
+            return None, nodes_created, []
+
+        threshold = new_threshold
+
+
 def search(node, graph, goals, threshold, path_ids, nodes_created):
     h = nearest_goal_dist(node.state, goals)
     f = node.path_cost + h
@@ -41,26 +66,3 @@ def search(node, graph, goals, threshold, path_ids, nodes_created):
             min_threshold = temp_threshold
     return None, min_threshold, nodes_created
   
-def ida_star(graph):
-    start = graph.origin
-    goals = graph.destinations
-
-    start_node = SearchNode(state=start, parent=None, action=None, path_cost=0)
-
-    threshold = nearest_goal_dist(start, goals)
-    nodes_created = 1
-
-    while True:
-        path_ids = {start.id}
-    
-        result, new_threshold, nodes_created = search(
-            start_node, graph, goals, threshold, path_ids, nodes_created
-        )
-
-        if result is not None:
-            return result.state.id, nodes_created, result.get_path()
-
-        if new_threshold == float("inf"):
-            return None, nodes_created, []
-
-        threshold = new_threshold
