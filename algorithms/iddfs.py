@@ -1,6 +1,3 @@
-from multiprocessing.util import debug
-import sys
-from node import SearchNode
 import sys
 from node import SearchNode
 

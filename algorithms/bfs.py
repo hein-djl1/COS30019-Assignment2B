@@ -1,7 +1,7 @@
 from node import SearchNode
 from collections import deque
 
-DEBUG = True
+DEBUG = False
 
 def bfs(graph):
     # get the starting node from the graph
