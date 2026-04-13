@@ -4,6 +4,7 @@ from collections import deque
 DEBUG = False
 
 def bfs(graph):
+    """Breadth First Search"""
     # get the starting node from the graph
     start = graph.origin
     # create the first search node (root of the search tree)
