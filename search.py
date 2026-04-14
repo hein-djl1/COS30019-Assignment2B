@@ -5,7 +5,7 @@ from algorithms.gbfs import gbfs
 from algorithms.dfs  import dfs
 from algorithms.bfs  import bfs
 from algorithms.astar import astar
-# from algorithms.cus1 import cus1
+from algorithms.iddfs import iddfs
 from algorithms.idastar import ida_star
 
 algorithms = {
@@ -13,7 +13,7 @@ algorithms = {
     "DFS":  dfs,
     "BFS":  bfs,
     "AS":   astar,
-    # "CUS1": cus1,
+    "IDDFS": iddfs,
     "IDA*": ida_star,
 }
 
