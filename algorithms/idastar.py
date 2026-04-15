@@ -27,7 +27,7 @@ def ida_star(graph):
     while True:
         path_ids = {start.id}
 
-         if DEBUG:
+        if DEBUG:
             print(f"\n[DEBUG] --- New IDA* Iteration ---")
             print(f"[DEBUG] Current threshold: {threshold}")
             print(f"[DEBUG] Initial path_ids: {path_ids}")
