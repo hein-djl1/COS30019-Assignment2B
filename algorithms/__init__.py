@@ -5,3 +5,4 @@ from algorithms.gbfs import gbfs
 from algorithms.astar import astar
 from algorithms.iddfs import iddfs
 from algorithms.idastar import ida_star
+from algorithms.idastar_multi import ida_star_multi
