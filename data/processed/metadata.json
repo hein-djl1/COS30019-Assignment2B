@@ -1,0 +1,76 @@
+{
+  "input_file": "Info\\Scats Data October 2006.xls",
+  "rows_before_cleaning": 402432,
+  "rows_after_cleaning": 116160,
+  "scats_sites_count": 40,
+  "date_range": {
+    "start": "2006-10-01 00:00:00",
+    "end": "2006-10-31 23:45:00"
+  },
+  "missing_before_cleaning": {
+    "scats_site": 0,
+    "date_raw": 0,
+    "flow_15min": 0
+  },
+  "missing_after_cleaning": {
+    "timestamp": 0,
+    "date": 0,
+    "time": 0,
+    "scats_site": 0,
+    "flow_15min": 0,
+    "flow_hour_simple": 0,
+    "flow_hour_rolling": 0,
+    "day_of_week": 0,
+    "hour": 0,
+    "minute": 0,
+    "interval_index": 0
+  },
+  "duplicates_removed": 286272,
+  "negative_flow_rows_removed": 0,
+  "split_config": {
+    "train_ratio": 0.7,
+    "validation_ratio": 0.15,
+    "test_ratio": 0.15,
+    "chronological": true
+  },
+  "split_rows": {
+    "train": 82840,
+    "validation": 16235,
+    "test": 17085
+  },
+  "output_files": {
+    "cleaned_scats_long_csv": "data\\processed\\cleaned_scats_long.csv",
+    "train_csv": "data\\processed\\train.csv",
+    "validation_csv": "data\\processed\\validation.csv",
+    "test_csv": "data\\processed\\test.csv",
+    "scats_sequences_npz": "data\\processed\\scats_sequences.npz"
+  },
+  "sequence_info": {
+    "generated": true,
+    "sequence_length": 8,
+    "features": [
+      "flow_15min",
+      "flow_hour_simple",
+      "flow_hour_rolling",
+      "day_of_week",
+      "hour",
+      "minute",
+      "interval_index"
+    ],
+    "train_shape": [
+      82520,
+      8,
+      7
+    ],
+    "validation_shape": [
+      15915,
+      8,
+      7
+    ],
+    "test_shape": [
+      16765,
+      8,
+      7
+    ]
+  }
+}
