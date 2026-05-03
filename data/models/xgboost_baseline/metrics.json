@@ -1,0 +1,34 @@
+{
+  "validation": {
+    "rmse": 15.564984349268352,
+    "mae": 10.638115882873535
+  },
+  "test": {
+    "rmse": 15.855805575074712,
+    "mae": 11.083373069763184
+  },
+  "config": {
+    "target_horizon": 1,
+    "lags": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "base_features": [
+      "flow_15min",
+      "flow_hour_simple",
+      "flow_hour_rolling",
+      "day_of_week",
+      "hour",
+      "minute",
+      "interval_index"
+    ]
+  },
+  "row_counts": {
+    "train": 82520,
+    "validation": 16235,
+    "test": 17045
+  },
+  "feature_count": 52
+}
