@@ -1,11 +1,11 @@
 {
   "validation": {
-    "rmse": 15.564984349268352,
-    "mae": 10.638115882873535
+    "rmse": 14.976775436996922,
+    "mae": 10.19012451171875
   },
   "test": {
-    "rmse": 15.855805575074712,
-    "mae": 11.083373069763184
+    "rmse": 15.381191588674136,
+    "mae": 10.716788291931152
   },
   "config": {
     "target_horizon": 1,
@@ -22,7 +22,9 @@
       "day_of_week",
       "hour",
       "minute",
-      "interval_index"
+      "interval_index",
+      "latitude",
+      "longitude"
     ]
   },
   "row_counts": {
@@ -30,5 +32,5 @@
     "validation": 16235,
     "test": 17045
   },
-  "feature_count": 52
+  "feature_count": 54
 }

@@ -6,6 +6,8 @@
   "hour",
   "minute",
   "interval_index",
+  "latitude",
+  "longitude",
   "flow_15min_lag_1",
   "flow_15min_lag_2",
   "flow_15min_lag_4",
