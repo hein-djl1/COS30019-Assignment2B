@@ -19,6 +19,8 @@ DEFAULT_BASE_FEATURES = [
     "hour",
     "minute",
     "interval_index",
+    "latitude",
+    "longitude",
 ]
 DEFAULT_LAGS = [1, 2, 4, 8]
 
@@ -85,6 +87,9 @@ def read_splits(processed_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.Dat
             raise ValueError(
                 f"{name}.csv missing required columns: {sorted(required - set(df.columns))}"
             )
+        for optional_location_feature in ["latitude", "longitude"]:
+            if optional_location_feature not in df.columns:
+                df[optional_location_feature] = 0.0
 
     return train_df, val_df, test_df
 
@@ -115,6 +120,8 @@ def add_temporal_features(
         full[f"flow_15min_lag_{lag}"] = full.groupby("scats_site")["flow_15min"].shift(lag)
 
     full["is_weekend"] = (full["day_of_week"] >= 5).astype(int)
+    for col in ["latitude", "longitude"]:
+        full[col] = pd.to_numeric(full[col], errors="coerce").fillna(0.0)
 
     return full
 
