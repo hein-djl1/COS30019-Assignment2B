@@ -106,7 +106,6 @@ def train_model(model, X_train, y_train, X_val, y_val, epochs, batch_size, patie
 def evaluate_model(model, X_test, y_test, y_scaler):
     y_pred_scaled = model.predict(X_test).flatten()
 
-    # Back to original traffic flow units
     y_pred = y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
     y_true = y_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
 
@@ -119,10 +118,8 @@ def save_results(model, metrics, args, history, output_dir):
     """Save model, metrics.json, and training history in CSV"""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save Keras model
     model.save(output_dir / "gru_model.keras")
 
-    # Save metrics and config
     config = vars(args).copy()
     for key, value in config.items():
         if isinstance(value, Path):
@@ -137,7 +134,6 @@ def save_results(model, metrics, args, history, output_dir):
     with open(output_dir / "metrics.json", "w") as f:
         json.dump(full_metrics, f, indent=2)
 
-    # Save training history as CSV
     import pandas as pd
     pd.DataFrame(history.history).to_csv(output_dir / "history.csv", index=False)
     print(f"Saved model and results to {output_dir}")
