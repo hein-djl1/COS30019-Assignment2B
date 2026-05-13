@@ -4,6 +4,10 @@ This script sets up the dependencies and loads preprocessed sequence data
 for building and evaluating an LSTM-based neural network model.
 """
 
+# ---------------------------------------------------
+# IMPORT LIBRARIES
+# ---------------------------------------------------
+
 # Core data manipulation and file path handling
 import numpy as np
 from pathlib import Path
@@ -15,106 +19,142 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 
-# Define the path to the preprocessed sequence data
-data_path = Path("data/processed/scats_sequences.npz")
+if __name__ == "__main__":
 
-# Load the numpy archive dataset into memory
-data = np.load(data_path)
+    # ---------------------------------------------------
+    # LOAD PREPROCESSED DATA
+    # ---------------------------------------------------
 
-# Training data
-X_train = data["X_train"]
-y_train = data["y_train"]
+    # Define the path to the preprocessed sequence data
+    data_path = Path("data/processed/scats_sequences.npz")
 
-# Validation data
-X_val = data["X_val"]
-y_val = data["y_val"]
+    # Load the numpy archive dataset into memory
+    data = np.load(data_path)
 
-# Testing data
-X_test = data["X_test"]
-y_test = data["y_test"]
+    # ---------------------------------------------------
+    # EXTRACT TRAIN / VALIDATION / TEST DATA
+    # ---------------------------------------------------
 
-# These checks are VERY important.
-# LSTM expects input in the form:
-# (samples, timesteps, features)
+    # Training data
+    X_train = data["X_train"]
+    y_train = data["y_train"]
 
-print("X_train:", X_train.shape)
-print("y_train:", y_train.shape)
+    # Validation data
+    X_val = data["X_val"]
+    y_val = data["y_val"]
 
-print("X_val:", X_val.shape)
-print("y_val:", y_val.shape)
+    # Testing data
+    X_test = data["X_test"]
+    y_test = data["y_test"]
 
-print("X_test:", X_test.shape)
-print("y_test:", y_test.shape)
+    # ---------------------------------------------------
+    # CHECK DATA SHAPES
+    # ---------------------------------------------------
 
-# Sequential means layers are added one after another
-model = Sequential()
+    # These checks are VERY important.
+    # LSTM expects input in the form:
+    # (samples, timesteps, features)
 
-# Add the LSTM layer
-# 64 = number of memory units (neurons)
-# input_shape = (timesteps, features)
-model.add(
-    LSTM(
-    64,
-    input_shape=(X_train.shape[1], X_train.shape[2])
+    print("X_train:", X_train.shape)
+    print("y_train:", y_train.shape)
+
+    print("X_val:", X_val.shape)
+    print("y_val:", y_val.shape)
+
+    print("X_test:", X_test.shape)
+    print("y_test:", y_test.shape)
+
+    # ---------------------------------------------------
+    # BUILD LSTM MODEL
+    # ---------------------------------------------------
+
+    # Sequential means layers are added one after another
+    model = Sequential()
+
+    # Add the LSTM layer
+    # 64 = number of memory units (neurons)
+    # input_shape = (timesteps, features)
+    model.add(
+        LSTM(
+        64,
+        input_shape=(X_train.shape[1], X_train.shape[2])
+        )
     )
-)
 
+    # ---------------------------------------------------
+    # COMPILE MODEL
+    # ---------------------------------------------------
 
-# Dense output layer
-# Outputs one predicted traffic value
-model.add(Dense(1))
+    # Dense output layer
+    # Outputs one predicted traffic value
+    model.add(Dense(1))
 
-# Adam optimizer is commonly used for deep learning
-# MSE is used because this is a regression problem
-model.compile(
-    optimizer="adam",
-    loss="mse"
-)
+    # Adam optimizer is commonly used for deep learning
+    # MSE is used because this is a regression problem
+    model.compile(
+        optimizer="adam",
+        loss="mse"
+    )
 
-# Print the model architecture summary
-model.summary()
+    # Print the model architecture summary
+    model.summary()
 
-# Train the LSTM model
-history = model.fit(
+    # ---------------------------------------------------
+    # TRAIN MODEL
+    # ---------------------------------------------------
 
-    # Training input data
-    X_train,
+    # Train the LSTM model
+    history = model.fit(
 
-    # Correct target values
-    y_train,
+        # Training input data
+        X_train,
 
-    # Validation dataset
-    validation_data=(X_val, y_val),
+        # Correct target values
+        y_train,
 
-    # Number of full passes through dataset
-    epochs=20,
+        # Validation dataset
+        validation_data=(X_val, y_val),
 
-    # Number of samples processed at once
-    batch_size=32
-)
+        # Number of full passes through dataset
+        epochs=20,
 
-# Predict traffic flow using the test dataset
-predictions = model.predict(X_test)
+        # Number of samples processed at once
+        batch_size=32
+    )
 
-# Convert predictions into a flat 1D array
-predictions = predictions.flatten()
+    # ---------------------------------------------------
+    # MAKE PREDICTIONS
+    # ---------------------------------------------------
 
+    # Predict traffic flow using the test dataset
+    predictions = model.predict(X_test)
 
-# Calculate Root Mean Squared Error (RMSE)
-rmse = np.sqrt(
-    mean_squared_error(y_test, predictions)
-)
+    # Convert predictions into a flat 1D array
+    predictions = predictions.flatten()
 
-# Calculate Mean Absolute Error (MAE)
-mae = mean_absolute_error(
-    y_test, predictions
-)
+    # ---------------------------------------------------
+    # EVALUATE MODEL PERFORMANCE
+    # ---------------------------------------------------
 
-# Print evaluation results
-print("RMSE:", rmse)
-print("MAE:", mae)
+    # Calculate Root Mean Squared Error (RMSE)
+    rmse = np.sqrt(
+        mean_squared_error(y_test, predictions)
+    )
 
-# Save the trained LSTM model
-model.save("data/models/lstm_model.h5")
+    # Calculate Mean Absolute Error (MAE)
+    mae = mean_absolute_error(
+        y_test, predictions
+    )
 
-print("Model saved successfully.")
+    # Print evaluation results
+    print("RMSE:", rmse)
+    print("MAE:", mae)
+
+    # ---------------------------------------------------
+    # SAVE TRAINED MODEL
+    # ---------------------------------------------------
+
+    # Save the trained LSTM model
+    model.save("data/models/lstm_model.h5")
+
+    print("Model saved successfully.")
