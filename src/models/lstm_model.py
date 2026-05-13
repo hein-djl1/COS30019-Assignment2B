@@ -54,10 +54,11 @@ model = Sequential()
 # input_shape = (timesteps, features)
 model.add(
     LSTM(
-        64,
-        input_shape=(8, 7)
+    64,
+    input_shape=(X_train.shape[1], X_train.shape[2])
     )
 )
+
 
 # Dense output layer
 # Outputs one predicted traffic value
@@ -72,3 +73,48 @@ model.compile(
 
 # Print the model architecture summary
 model.summary()
+
+# Train the LSTM model
+history = model.fit(
+
+    # Training input data
+    X_train,
+
+    # Correct target values
+    y_train,
+
+    # Validation dataset
+    validation_data=(X_val, y_val),
+
+    # Number of full passes through dataset
+    epochs=20,
+
+    # Number of samples processed at once
+    batch_size=32
+)
+
+# Predict traffic flow using the test dataset
+predictions = model.predict(X_test)
+
+# Convert predictions into a flat 1D array
+predictions = predictions.flatten()
+
+
+# Calculate Root Mean Squared Error (RMSE)
+rmse = np.sqrt(
+    mean_squared_error(y_test, predictions)
+)
+
+# Calculate Mean Absolute Error (MAE)
+mae = mean_absolute_error(
+    y_test, predictions
+)
+
+# Print evaluation results
+print("RMSE:", rmse)
+print("MAE:", mae)
+
+# Save the trained LSTM model
+model.save("data/models/lstm_model.h5")
+
+print("Model saved successfully.")
