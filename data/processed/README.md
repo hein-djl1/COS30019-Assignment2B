@@ -24,6 +24,8 @@ Optional flags:
 - `date`: date portion from timestamp.
 - `time`: time portion from timestamp.
 - `scats_site`: SCATS site ID.
+- `location`: VicRoads intersection/location label from the source workbook.
+- `latitude` and `longitude`: SCATS site coordinates from the source workbook.
 - `flow_15min`: observed traffic flow for the 15-minute interval.
 - `flow_hour_simple`: `flow_15min * 4`.
 - `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per site.

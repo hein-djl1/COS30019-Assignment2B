@@ -10,13 +10,18 @@
   "missing_before_cleaning": {
     "scats_site": 0,
     "date_raw": 0,
-    "flow_15min": 0
+    "flow_15min": 0,
+    "latitude": 0,
+    "longitude": 0
   },
   "missing_after_cleaning": {
     "timestamp": 0,
     "date": 0,
     "time": 0,
     "scats_site": 0,
+    "location": 0,
+    "latitude": 0,
+    "longitude": 0,
     "flow_15min": 0,
     "flow_hour_simple": 0,
     "flow_hour_rolling": 0,
@@ -55,22 +60,24 @@
       "day_of_week",
       "hour",
       "minute",
-      "interval_index"
+      "interval_index",
+      "latitude",
+      "longitude"
     ],
     "train_shape": [
       82520,
       8,
-      7
+      9
     ],
     "validation_shape": [
       15915,
       8,
-      7
+      9
     ],
     "test_shape": [
       16765,
       8,
-      7
+      9
     ]
   }
 }
