@@ -17,6 +17,8 @@ DEFAULT_FEATURE_COLUMNS = [
     "hour",
     "minute",
     "interval_index",
+    "latitude",
+    "longitude",
 ]
 
 
@@ -98,12 +100,21 @@ def to_long_format(raw_df: pd.DataFrame) -> pd.DataFrame:
             f"Found {len(interval_columns)}: {interval_columns[:5]}..."
         )
 
-    keep_columns = ["SCATS Number", "Date"]
-    id_frame = raw_df[keep_columns].rename(columns={"SCATS Number": "scats_site", "Date": "date_raw"})
+    keep_columns = ["SCATS Number", "Date", "Location", "NB_LATITUDE", "NB_LONGITUDE"]
+    available_columns = [col for col in keep_columns if col in raw_df.columns]
+    id_frame = raw_df[available_columns].rename(
+        columns={
+            "SCATS Number": "scats_site",
+            "Date": "date_raw",
+            "Location": "location",
+            "NB_LATITUDE": "latitude",
+            "NB_LONGITUDE": "longitude",
+        }
+    )
     work = pd.concat([id_frame, raw_df[interval_columns]], axis=1)
 
     long_df = work.melt(
-        id_vars=["scats_site", "date_raw"],
+        id_vars=id_frame.columns.tolist(),
         value_vars=interval_columns,
         var_name="interval_col",
         value_name="flow_15min",
@@ -120,11 +131,22 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
     df["scats_site"] = pd.to_numeric(df["scats_site"], errors="coerce")
     df["date_raw"] = pd.to_datetime(df["date_raw"], errors="coerce")
     df["flow_15min"] = pd.to_numeric(df["flow_15min"], errors="coerce")
+    if "latitude" not in df.columns:
+        df["latitude"] = np.nan
+    if "longitude" not in df.columns:
+        df["longitude"] = np.nan
+    if "location" not in df.columns:
+        df["location"] = ""
+    df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
+    df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
+    df["location"] = df["location"].fillna("").astype(str)
 
     missing_before = {
         "scats_site": int(df["scats_site"].isna().sum()),
         "date_raw": int(df["date_raw"].isna().sum()),
         "flow_15min": int(df["flow_15min"].isna().sum()),
+        "latitude": int(df["latitude"].isna().sum()),
+        "longitude": int(df["longitude"].isna().sum()),
     }
 
     df = df.dropna(subset=["scats_site", "date_raw"])
@@ -160,6 +182,9 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
         "date",
         "time",
         "scats_site",
+        "location",
+        "latitude",
+        "longitude",
         "flow_15min",
         "flow_hour_simple",
         "flow_hour_rolling",
@@ -277,6 +302,8 @@ Optional flags:
 - `date`: date portion from timestamp.
 - `time`: time portion from timestamp.
 - `scats_site`: SCATS site ID.
+- `location`: VicRoads intersection/location label from the source workbook.
+- `latitude` and `longitude`: SCATS site coordinates from the source workbook.
 - `flow_15min`: observed traffic flow for the 15-minute interval.
 - `flow_hour_simple`: `flow_15min * 4`.
 - `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per site.
