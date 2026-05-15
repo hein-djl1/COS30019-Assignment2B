@@ -14,6 +14,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned_scats_long.csv"
 DEFAULT_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "xgboost_baseline"
 DEFAULT_LSTM_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "lstm_model.h5"
+DEFAULT_GRU_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "gru_model_simple"
+SEQUENCE_FEATURE_COLUMNS = [
+    "flow_15min",
+    "flow_hour_simple",
+    "flow_hour_rolling",
+    "day_of_week",
+    "hour",
+    "minute",
+    "interval_index",
+    "latitude",
+    "longitude",
+]
 
 
 @dataclass(frozen=True)
@@ -167,19 +179,7 @@ class LSTMGlobalModel:
         sequence = prior.iloc[-8:]
 
         # Build feature matrix
-        features = sequence[
-            [
-                "flow_15min",
-                "flow_hour_simple",
-                "flow_hour_rolling",
-                "day_of_week",
-                "hour",
-                "minute",
-                "interval_index",
-                "latitude",
-                "longitude",
-            ]
-        ].values.astype(np.float32)
+        features = sequence[SEQUENCE_FEATURE_COLUMNS].values.astype(np.float32)
 
         # Reshape into LSTM input format
         features = np.expand_dims(features, axis=0)
@@ -201,11 +201,61 @@ class LSTMGlobalModel:
             predicted_flow_hour=prediction * 4.0,
         )
 
+class GRUGlobalModel:
+    model_id = "gru_global"
+    label = "Global GRU"
+
+    def __init__(
+        self,
+        model_dir: Path = DEFAULT_GRU_MODEL_DIR,
+        processed_path: Path = DEFAULT_PROCESSED_PATH,
+    ) -> None:
+        self.model = load_model(model_dir / "gru_model.keras", compile=False)
+        self.X_scaler = joblib.load(model_dir / "X_scaler.pkl")
+        self.y_scaler = joblib.load(model_dir / "y_scaler.pkl")
+
+        self.history = pd.read_csv(processed_path, parse_dates=["timestamp"])
+        self.history = self.history.sort_values(["scats_site", "timestamp"]).reset_index(drop=True)
+        self.site_history = {
+            int(site): group.sort_values("timestamp").reset_index(drop=True)
+            for site, group in self.history.groupby("scats_site")
+        }
+
+    def predict(self, request: PredictionRequest) -> PredictionResult:
+        if request.scats_site not in self.site_history:
+            raise ValueError(f"Unknown SCATS site: {request.scats_site}")
+
+        site_df = self.site_history[request.scats_site]
+        ts = pd.Timestamp(request.timestamp)
+        prior = site_df[site_df["timestamp"] <= ts]
+        if len(prior) < 8:
+            raise ValueError(f"Not enough history for SCATS site {request.scats_site}")
+
+        sequence = prior.iloc[-8:]
+        features = sequence[SEQUENCE_FEATURE_COLUMNS].values.astype(np.float32)
+        features = self.X_scaler.transform(features)
+        features = np.expand_dims(features, axis=0)
+
+        prediction_scaled = float(self.model.predict(features, verbose=0)[0][0])
+        prediction = float(
+            self.y_scaler.inverse_transform(np.array([[prediction_scaled]])).flatten()[0]
+        )
+        prediction = max(0.0, prediction)
+
+        return PredictionResult(
+            model_id=self.model_id,
+            scats_site=request.scats_site,
+            timestamp=request.timestamp,
+            predicted_flow_15min=prediction,
+            predicted_flow_hour=prediction * 4.0,
+        )
+
 class ModelRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, Callable[[], TrafficModel]] = {
             XGBoostGlobalModel.model_id: XGBoostGlobalModel,
             LSTMGlobalModel.model_id: LSTMGlobalModel,
+            GRUGlobalModel.model_id: GRUGlobalModel,
         }
         self._instances: dict[str, TrafficModel] = {}
 

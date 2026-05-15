@@ -1,23 +1,23 @@
 """
 gru_model.py
-Train and evaluate a GRU model for traffic flow prediction using pre-made sequences.
+Train and evaluate a simple GRU model for traffic flow prediction using pre-made sequences.
 Usage:
-    python gru_model.py --epochs 100 --batch-size 32 --units 64 --dropout 0.2
+    python gru_model.py --epochs 20 --batch-size 32 --units 64
 """
 
 import argparse
 import json
 from pathlib import Path
 
-import numpy as np
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import GRU, Dense, Dropout, BatchNormalization
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.optimizers import Adam
-
-from sklearn.preprocessing import MinMaxScaler
 import joblib
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.layers import GRU, Dense
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
 
 
 def parse_args():
@@ -28,11 +28,15 @@ def parse_args():
     parser.add_argument("--output", type=Path, default="data/models/gru_model",
                         help="Output directory for model and metrics")
     parser.add_argument("--units", type=int, default=64, help="Number of GRU units")
-    parser.add_argument("--dropout", type=float, default=0.2, help="Dropout rate")
     parser.add_argument("--learning-rate", type=float, default=0.0005, help="Initial learning rate")
-    parser.add_argument("--epochs", type=int, default=100, help="Max training epochs")
+    parser.add_argument("--epochs", type=int, default=20, help="Max training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience")
+    parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
+    parser.add_argument(
+        "--no-early-stopping",
+        action="store_true",
+        help="Train for all epochs instead of stopping when validation loss stops improving",
+    )
 
     return parser.parse_args()
 
@@ -71,17 +75,10 @@ def normalize_data(X_train, y_train, X_val, y_val, X_test, y_test, output_dir):
     return X_train, y_train, X_val, y_val, X_test, y_test, y_scaler
 
 
-def build_model(input_shape, units, dropout, learning_rate=0.001):
-    """Create and compile GRU model with two layers and batch norm"""
+def build_model(input_shape, units, learning_rate=0.001):
+    """Create and compile a simple one-layer GRU model."""
     model = Sequential()
-    # First GRU layer (returns sequences for stacking)
-    model.add(GRU(units, input_shape=input_shape, dropout=dropout,
-                  recurrent_dropout=dropout, return_sequences=True))
-    model.add(BatchNormalization())
-    # Second GRU layer
-    model.add(GRU(units // 2, dropout=dropout, recurrent_dropout=dropout))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout))
+    model.add(GRU(units, input_shape=input_shape))
     model.add(Dense(1))
     
     optimizer = Adam(learning_rate=learning_rate)
@@ -89,16 +86,42 @@ def build_model(input_shape, units, dropout, learning_rate=0.001):
     return model
 
 
-def train_model(model, X_train, y_train, X_val, y_val, epochs, batch_size, patience):
-    """Train with early stopping and learning rate reduction"""
-    early_stop = EarlyStopping(monitor="val_loss", patience=patience,
-                               restore_best_weights=True, verbose=1)
-    reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5,
-                                  min_lr=1e-6, verbose=1)
+def train_model(
+    model,
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    epochs,
+    batch_size,
+    patience,
+    use_early_stopping=True,
+):
+    """Train with validation monitoring and optional early stopping."""
+    callbacks = [
+        ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=5,
+            min_lr=1e-6,
+            verbose=1,
+        )
+    ]
+    if use_early_stopping:
+        callbacks.insert(
+            0,
+            EarlyStopping(
+                monitor="val_loss",
+                patience=patience,
+                restore_best_weights=True,
+                verbose=1,
+            ),
+        )
+
     history = model.fit(X_train, y_train,
                         validation_data=(X_val, y_val),
                         epochs=epochs, batch_size=batch_size,
-                        callbacks=[early_stop, reduce_lr],
+                        callbacks=callbacks,
                         verbose=1)
     return history
 
@@ -114,6 +137,16 @@ def evaluate_model(model, X_test, y_test, y_scaler):
     return {"rmse": float(rmse), "mae": float(mae)}
 
 
+def get_best_epoch(history):
+    """Return the 1-based epoch with the lowest validation loss."""
+    val_losses = history.history.get("val_loss", [])
+    if not val_losses:
+        return None, None
+
+    best_index = int(np.argmin(val_losses))
+    return best_index + 1, float(val_losses[best_index])
+
+
 def save_results(model, metrics, args, history, output_dir):
     """Save model, metrics.json, and training history in CSV"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -125,17 +158,24 @@ def save_results(model, metrics, args, history, output_dir):
         if isinstance(value, Path):
             config[key] = str(value)
 
+    best_epoch, best_val_loss = get_best_epoch(history)
     full_metrics = {
-        "test_metrics": metrics,
+        "validation": metrics["validation"],
+        "test": metrics["test"],
+        "test_metrics": metrics["test"],
         "config": config,
-        "training_samples": len(history.history["loss"])
+        "epochs_trained": len(history.history["loss"]),
+        "best_epoch": best_epoch,
+        "best_val_loss": best_val_loss,
+        "early_stopping_enabled": not args.no_early_stopping,
     }
     
     with open(output_dir / "metrics.json", "w") as f:
         json.dump(full_metrics, f, indent=2)
 
-    import pandas as pd
-    pd.DataFrame(history.history).to_csv(output_dir / "history.csv", index=False)
+    history_df = pd.DataFrame(history.history)
+    history_df.insert(0, "epoch", range(1, len(history_df) + 1))
+    history_df.to_csv(output_dir / "history.csv", index=False)
     print(f"Saved model and results to {output_dir}")
 
 
@@ -150,16 +190,29 @@ def main():
     )
 
     input_shape = (X_train.shape[1], X_train.shape[2])
-    model = build_model(input_shape, args.units, args.dropout, args.learning_rate)
+    model = build_model(input_shape, args.units, args.learning_rate)
     model.summary()
 
-    history = train_model(model, X_train, y_train, X_val, y_val,
-                          args.epochs, args.batch_size, args.patience)
+    history = train_model(
+        model,
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        args.epochs,
+        args.batch_size,
+        args.patience,
+        use_early_stopping=not args.no_early_stopping,
+    )
 
-    test_metrics = evaluate_model(model, X_test, y_test, y_scaler)
-    print(f"Test RMSE: {test_metrics['rmse']:.4f}, MAE: {test_metrics['mae']:.4f}")
+    metrics = {
+        "validation": evaluate_model(model, X_val, y_val, y_scaler),
+        "test": evaluate_model(model, X_test, y_test, y_scaler),
+    }
+    print(f"Validation RMSE: {metrics['validation']['rmse']:.4f}, MAE: {metrics['validation']['mae']:.4f}")
+    print(f"Test RMSE: {metrics['test']['rmse']:.4f}, MAE: {metrics['test']['mae']:.4f}")
 
-    save_results(model, test_metrics, args, history, args.output)
+    save_results(model, metrics, args, history, args.output)
 
 
 if __name__ == "__main__":
