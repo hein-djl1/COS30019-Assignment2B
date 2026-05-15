@@ -9,7 +9,9 @@ for building and evaluating an LSTM-based neural network model.
 # ---------------------------------------------------
 
 # Core data manipulation and file path handling
+import json
 import numpy as np
+import pandas as pd
 from pathlib import Path
 
 # Metrics for evaluating model performance
@@ -126,10 +128,12 @@ if __name__ == "__main__":
     # MAKE PREDICTIONS
     # ---------------------------------------------------
 
-    # Predict traffic flow using the test dataset
+    # Predict traffic flow using the validation and test datasets
+    val_predictions = model.predict(X_val)
     predictions = model.predict(X_test)
 
-    # Convert predictions into a flat 1D array
+    # Convert predictions into flat 1D arrays
+    val_predictions = val_predictions.flatten()
     predictions = predictions.flatten()
 
     # ---------------------------------------------------
@@ -147,6 +151,16 @@ if __name__ == "__main__":
     )
 
     # Print evaluation results
+    val_rmse = np.sqrt(
+        mean_squared_error(y_val, val_predictions)
+    )
+
+    val_mae = mean_absolute_error(
+        y_val, val_predictions
+    )
+
+    print("Validation RMSE:", val_rmse)
+    print("Validation MAE:", val_mae)
     print("RMSE:", rmse)
     print("MAE:", mae)
 
@@ -157,4 +171,37 @@ if __name__ == "__main__":
     # Save the trained LSTM model
     model.save("data/models/lstm_model.h5")
 
+    # Save metrics and training history for model comparison
+    output_dir = Path("data/models/lstm_model")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics = {
+        "validation": {
+            "rmse": float(val_rmse),
+            "mae": float(val_mae),
+        },
+        "test": {
+            "rmse": float(rmse),
+            "mae": float(mae),
+        },
+        "config": {
+            "data": str(data_path),
+            "model_path": "data/models/lstm_model.h5",
+            "epochs": 20,
+            "batch_size": 32,
+            "units": 64,
+        },
+        "epochs_trained": len(history.history["loss"]),
+    }
+
+    metrics_path = output_dir / "metrics.json"
+    history_path = output_dir / "history.csv"
+    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    history_df = pd.DataFrame(history.history)
+    history_df.insert(0, "epoch", range(1, len(history_df) + 1))
+    history_df.to_csv(history_path, index=False)
+
     print("Model saved successfully.")
+    print(f"Metrics saved to: {metrics_path}")
+    print(f"History saved to: {history_path}")
