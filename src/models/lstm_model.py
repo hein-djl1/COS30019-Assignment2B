@@ -35,6 +35,10 @@ if __name__ == "__main__":
     # EXTRACT TRAIN / VALIDATION / TEST DATA
     # ---------------------------------------------------
 
+    # Separate data into 3 types
+    # X = input features
+    # y = target values
+
     # Training data
     X_train = data["X_train"]
     y_train = data["y_train"]
@@ -51,7 +55,6 @@ if __name__ == "__main__":
     # CHECK DATA SHAPES
     # ---------------------------------------------------
 
-    # These checks are VERY important.
     # LSTM expects input in the form:
     # (samples, timesteps, features)
 
