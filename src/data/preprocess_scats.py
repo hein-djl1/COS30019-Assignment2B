@@ -19,7 +19,12 @@ DEFAULT_FEATURE_COLUMNS = [
     "interval_index",
     "latitude",
     "longitude",
+    "location_encoded",
 ]
+SERIES_KEY_COLUMNS = {
+    "site": ["scats_site"],
+    "location": ["scats_site", "location"],
+}
 
 
 @dataclass
@@ -50,6 +55,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-ratio", type=float, default=0.15)
     parser.add_argument("--sequence-length", type=int, default=8)
     parser.add_argument(
+        "--series-key",
+        choices=sorted(SERIES_KEY_COLUMNS),
+        default="site",
+        help=(
+            "Time-series identity. 'site' collapses all locations under each SCATS site; "
+            "'location' keeps each SCATS site + location stream separate."
+        ),
+    )
+    parser.add_argument(
         "--skip-sequences",
         action="store_true",
         help="Skip generation of scats_sequences.npz",
@@ -66,6 +80,12 @@ def validate_split_ratios(train_ratio: float, val_ratio: float, test_ratio: floa
         )
     if min(train_ratio, val_ratio, test_ratio) <= 0:
         raise ValueError("All split ratios must be > 0.")
+
+
+def get_series_columns(series_key: str) -> list[str]:
+    if series_key not in SERIES_KEY_COLUMNS:
+        raise ValueError(f"Unknown series key: {series_key}")
+    return SERIES_KEY_COLUMNS[series_key]
 
 
 def load_raw_data(input_path: Path) -> pd.DataFrame:
@@ -124,8 +144,10 @@ def to_long_format(raw_df: pd.DataFrame) -> pd.DataFrame:
     return long_df.drop(columns=["interval_col"])
 
 
-def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+def clean_and_engineer(long_df: pd.DataFrame, series_key: str = "site") -> tuple[pd.DataFrame, dict[str, Any]]:
     rows_before_cleaning = int(len(long_df))
+    # The series key controls where rolling features and duplicates are computed.
+    series_columns = get_series_columns(series_key)
 
     df = long_df.copy()
     df["scats_site"] = pd.to_numeric(df["scats_site"], errors="coerce")
@@ -157,17 +179,18 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
     df["date"] = df["date_raw"].dt.floor("D")
     df["timestamp"] = df["date"] + pd.to_timedelta(df["interval_index"] * 15, unit="minute")
 
-    duplicate_count = int(df.duplicated(subset=["scats_site", "timestamp"]).sum())
-    df = df.drop_duplicates(subset=["scats_site", "timestamp"], keep="first")
+    duplicate_subset = series_columns + ["timestamp"]
+    duplicate_count = int(df.duplicated(subset=duplicate_subset).sum())
+    df = df.drop_duplicates(subset=duplicate_subset, keep="first")
 
-    df = df.sort_values(["scats_site", "timestamp"]).reset_index(drop=True)
+    df = df.sort_values(series_columns + ["timestamp"]).reset_index(drop=True)
 
     df["flow_hour_simple"] = df["flow_15min"] * 4
     df["flow_hour_rolling"] = (
-        df.groupby("scats_site", group_keys=False)["flow_15min"]
+        df.groupby(series_columns, group_keys=False)["flow_15min"]
         .rolling(window=4, min_periods=1)
         .sum()
-        .reset_index(level=0, drop=True)
+        .reset_index(level=list(range(len(series_columns))), drop=True)
     )
 
     df["day_of_week"] = df["timestamp"].dt.dayofweek
@@ -176,6 +199,15 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
     df["time"] = df["timestamp"].dt.strftime("%H:%M:%S")
     df["date"] = df["timestamp"].dt.strftime("%Y-%m-%d")
     df["scats_site"] = df["scats_site"].astype(int)
+
+    location_values = sorted(df["location"].dropna().astype(str).unique())
+    location_denominator = max(1, len(location_values) - 1)
+    # Sequence models need a numeric location feature, while XGBoost uses one-hot columns.
+    location_codes = {
+        location: index / location_denominator
+        for index, location in enumerate(location_values)
+    }
+    df["location_encoded"] = df["location"].map(location_codes).astype(float)
 
     ordered_columns = [
         "timestamp",
@@ -192,10 +224,11 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
         "hour",
         "minute",
         "interval_index",
+        "location_encoded",
     ]
 
     cleaned = df[ordered_columns].copy()
-    cleaned = cleaned.sort_values(["scats_site", "timestamp"]).reset_index(drop=True)
+    cleaned = cleaned.sort_values(series_columns + ["timestamp"]).reset_index(drop=True)
 
     rows_after_cleaning = int(len(cleaned))
     missing_after = {col: int(cleaned[col].isna().sum()) for col in cleaned.columns}
@@ -207,6 +240,8 @@ def clean_and_engineer(long_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, A
         "missing_after_cleaning": missing_after,
         "negative_flow_rows_removed": negative_rows,
         "duplicates_removed": duplicate_count,
+        "series_key": series_key,
+        "series_columns": series_columns,
     }
     return cleaned, stats
 
@@ -241,11 +276,17 @@ def chronological_split(
     return SplitResult(train=train_df, validation=val_df, test=test_df)
 
 
-def make_sequences(df: pd.DataFrame, seq_len: int, feature_cols: list[str]) -> tuple[np.ndarray, np.ndarray]:
+def make_sequences(
+    df: pd.DataFrame,
+    seq_len: int,
+    feature_cols: list[str],
+    series_key: str = "site",
+) -> tuple[np.ndarray, np.ndarray]:
     x_parts: list[np.ndarray] = []
     y_parts: list[np.ndarray] = []
+    series_columns = get_series_columns(series_key)
 
-    for _, group in df.groupby("scats_site"):
+    for _, group in df.groupby(series_columns):
         g = group.sort_values("timestamp")
         features = g[feature_cols].to_numpy(dtype=np.float32)
         targets = g["flow_15min"].to_numpy(dtype=np.float32)
@@ -289,6 +330,7 @@ Optional flags:
 - `--output-dir "data/processed"`
 - `--train-ratio 0.7 --val-ratio 0.15 --test-ratio 0.15`
 - `--sequence-length 8`
+- `--series-key site|location`
 - `--skip-sequences`
 
 ## Generated files
@@ -306,11 +348,15 @@ Optional flags:
 - `latitude` and `longitude`: SCATS site coordinates from the source workbook.
 - `flow_15min`: observed traffic flow for the 15-minute interval.
 - `flow_hour_simple`: `flow_15min * 4`.
-- `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per site.
+- `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per series.
 - `day_of_week`: Monday=0 ... Sunday=6.
 - `hour`: hour from timestamp.
 - `minute`: minute from timestamp.
 - `interval_index`: index from 0 to 95 across the day.
+- `location_encoded`: normalized numeric location identity for sequence models.
+
+## Series key
+Use `--series-key site` to collapse all detector locations under each SCATS site. Use `--series-key location` to keep each `scats_site + location` stream separate.
 
 ## Why chronological split
 Time-series models must learn from past data to predict future data. Chronological split avoids leakage that can happen with random shuffling.
@@ -346,6 +392,10 @@ def build_metadata(
         "rows_before_cleaning": cleaning_stats["rows_before_cleaning"],
         "rows_after_cleaning": cleaning_stats["rows_after_cleaning"],
         "scats_sites_count": int(cleaned["scats_site"].nunique()),
+        "location_streams_count": int(cleaned[["scats_site", "location"]].drop_duplicates().shape[0]),
+        "series_key": cleaning_stats["series_key"],
+        "series_columns": cleaning_stats["series_columns"],
+        "sequence_feature_columns": sequence_stats["features"],
         "date_range": {
             "start": str(timestamp_min),
             "end": str(timestamp_max),
@@ -380,7 +430,7 @@ def main() -> None:
 
     raw = load_raw_data(input_path)
     long_df = to_long_format(raw)
-    cleaned, cleaning_stats = clean_and_engineer(long_df)
+    cleaned, cleaning_stats = clean_and_engineer(long_df, args.series_key)
 
     splits = chronological_split(cleaned, args.train_ratio, args.val_ratio, args.test_ratio)
 
@@ -406,13 +456,20 @@ def main() -> None:
     sequence_stats: dict[str, Any] = {
         "generated": False,
         "sequence_length": args.sequence_length,
+        "series_key": args.series_key,
         "features": DEFAULT_FEATURE_COLUMNS,
     }
 
     if not args.skip_sequences:
-        x_train, y_train = make_sequences(splits.train, args.sequence_length, DEFAULT_FEATURE_COLUMNS)
-        x_val, y_val = make_sequences(splits.validation, args.sequence_length, DEFAULT_FEATURE_COLUMNS)
-        x_test, y_test = make_sequences(splits.test, args.sequence_length, DEFAULT_FEATURE_COLUMNS)
+        x_train, y_train = make_sequences(
+            splits.train, args.sequence_length, DEFAULT_FEATURE_COLUMNS, args.series_key
+        )
+        x_val, y_val = make_sequences(
+            splits.validation, args.sequence_length, DEFAULT_FEATURE_COLUMNS, args.series_key
+        )
+        x_test, y_test = make_sequences(
+            splits.test, args.sequence_length, DEFAULT_FEATURE_COLUMNS, args.series_key
+        )
 
         np.savez(
             sequences_path,
@@ -422,7 +479,7 @@ def main() -> None:
             y_val=y_val,
             X_test=x_test,
             y_test=y_test,
-            feature_names=np.array(DEFAULT_FEATURE_COLUMNS, dtype=object),
+            feature_names=np.array(DEFAULT_FEATURE_COLUMNS, dtype=str),
             sequence_length=np.array([args.sequence_length], dtype=np.int32),
         )
 

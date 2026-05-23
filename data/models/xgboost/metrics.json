@@ -1,0 +1,46 @@
+{
+  "validation": {
+    "rmse": 16.40065752897769,
+    "mae": 10.682185173034668,
+    "nrmse": 0.023598068387018258
+  },
+  "test": {
+    "rmse": 16.870200597885333,
+    "mae": 11.234342575073242,
+    "nrmse": 0.027386689282281385
+  },
+  "config": {
+    "target_horizon": 1,
+    "lags": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "numeric_features": [
+      "flow_15min",
+      "flow_hour_simple",
+      "flow_hour_rolling",
+      "day_of_week",
+      "hour",
+      "minute",
+      "interval_index",
+      "latitude",
+      "longitude"
+    ],
+    "series_columns": [
+      "scats_site",
+      "location"
+    ],
+    "categorical_features": [
+      "scats_site",
+      "location"
+    ]
+  },
+  "row_counts": {
+    "train": 284133,
+    "validation": 55801,
+    "test": 58271
+  },
+  "feature_count": 193
+}

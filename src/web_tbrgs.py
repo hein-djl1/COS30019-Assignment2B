@@ -16,13 +16,15 @@ HOST = "127.0.0.1"
 PORT = 8000
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "tbrgs_config.json"
+LOCATION_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed_location" / "cleaned_scats_long.csv"
+PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned_scats_long.csv"
 
 
 def load_config() -> dict[str, object]:
     defaults: dict[str, object] = {
         "host": HOST,
         "port": PORT,
-        "default_model": "xgboost_global",
+        "default_model": "xgboost",
         "default_date": "2006-10-23",
         "default_time": "08:00",
         "default_top_k": 5,
@@ -30,6 +32,33 @@ def load_config() -> dict[str, object]:
     if CONFIG_PATH.exists():
         defaults.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
     return defaults
+
+
+def load_scats_locations() -> list[dict[str, object]]:
+    sites_by_id = load_scats_sites()
+    path = LOCATION_PROCESSED_PATH if LOCATION_PROCESSED_PATH.exists() else PROCESSED_PATH
+    df = pd.read_csv(path, usecols=["scats_site", "location", "latitude", "longitude"])
+    df["scats_site"] = pd.to_numeric(df["scats_site"], errors="coerce")
+    df["latitude"] = pd.to_numeric(df["latitude"], errors="coerce")
+    df["longitude"] = pd.to_numeric(df["longitude"], errors="coerce")
+    df["location"] = df["location"].fillna("").astype(str)
+    df = df.dropna(subset=["scats_site"])
+    df["scats_site"] = df["scats_site"].astype(int)
+    df = df[df["scats_site"].isin(sites_by_id)]
+    df = df.drop_duplicates(["scats_site", "location"]).sort_values(["scats_site", "location"])
+
+    locations: list[dict[str, object]] = []
+    for row in df.itertuples(index=False):
+        site = sites_by_id[int(row.scats_site)]
+        locations.append(
+            {
+                "scats_site": int(row.scats_site),
+                "location": str(row.location),
+                "latitude": site.latitude,
+                "longitude": site.longitude,
+            }
+        )
+    return locations
 
 
 HTML = """<!doctype html>
@@ -67,7 +96,7 @@ HTML = """<!doctype html>
     }
     .controls {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       gap: 14px;
       align-items: end;
       background: #ffffff;
@@ -252,8 +281,10 @@ HTML = """<!doctype html>
   <main>
     <section class="controls">
       <label class="wide">Model<select id="model"></select></label>
-      <label class="wide">Origin<select id="origin"></select></label>
-      <label class="wide">Destination<select id="destination"></select></label>
+      <label>Origin site<select id="originSite"></select></label>
+      <label class="wide">Origin location<select id="originLocation"></select></label>
+      <label>Destination site<select id="destinationSite"></select></label>
+      <label class="wide">Destination location<select id="destinationLocation"></select></label>
       <label>Date<input id="date" type="date" value="2006-10-23"></label>
       <label>Time<input id="time" type="time" step="900" value="08:00"></label>
       <label>Top routes<input id="k" type="number" min="1" max="5" value="5"></label>
@@ -284,14 +315,18 @@ HTML = """<!doctype html>
   </main>
   <script>
     const modelSelect = document.querySelector("#model");
-    const originSelect = document.querySelector("#origin");
-    const destinationSelect = document.querySelector("#destination");
+    const originSiteSelect = document.querySelector("#originSite");
+    const originLocationSelect = document.querySelector("#originLocation");
+    const destinationSiteSelect = document.querySelector("#destinationSite");
+    const destinationLocationSelect = document.querySelector("#destinationLocation");
     const status = document.querySelector("#status");
     const rows = document.querySelector("#routes");
     const findButton = document.querySelector("#find");
     const graphSvg = document.querySelector("#graph");
     const graphSummary = document.querySelector("#graphSummary");
     let graphData = { nodes: [], edges: [] };
+    let locationsBySite = new Map();
+    let hasRouteResults = false;
 
     function option(value, text) {
       const el = document.createElement("option");
@@ -300,26 +335,63 @@ HTML = """<!doctype html>
       return el;
     }
 
+    function selectedLocation(siteSelect, locationSelect) {
+      return {
+        site: siteSelect.value,
+        location: locationSelect.value
+      };
+    }
+
+    function populateLocations(siteSelect, locationSelect, preferredLocation = null) {
+      locationSelect.replaceChildren();
+      const locations = locationsBySite.get(siteSelect.value) || [];
+      locations.forEach(location => {
+        locationSelect.appendChild(option(location.location, location.location));
+      });
+      if (preferredLocation && locations.some(location => location.location === preferredLocation)) {
+        locationSelect.value = preferredLocation;
+      }
+    }
+
+    function markRouteResultsStale() {
+      if (!hasRouteResults) return;
+      hasRouteResults = false;
+      rows.replaceChildren();
+      status.className = "status";
+      // Route rows are only valid for the exact controls used in the last search.
+      status.textContent = "Inputs changed. Click Find Routes to recalculate.";
+      renderGraph();
+    }
+
     async function loadDefaults() {
-      const [models, sites, graph] = await Promise.all([
+      const [models, locations, graph] = await Promise.all([
         fetch("/api/models").then(r => r.json()),
-        fetch("/api/sites").then(r => r.json()),
+        fetch("/api/locations").then(r => r.json()),
         fetch("/api/graph").then(r => r.json())
       ]);
       graphData = graph;
       const config = await fetch("/api/config").then(r => r.json());
       models.forEach(model => modelSelect.appendChild(option(model.id, model.label)));
       modelSelect.value = config.default_model;
-      sites.forEach(site => {
-        const label = `${site.scats_site} - ${site.location}`;
-        originSelect.appendChild(option(site.scats_site, label));
-        destinationSelect.appendChild(option(site.scats_site, label));
+
+      locationsBySite = new Map();
+      locations.forEach(location => {
+        const siteId = String(location.scats_site);
+        if (!locationsBySite.has(siteId)) locationsBySite.set(siteId, []);
+        locationsBySite.get(siteId).push(location);
       });
-      if (sites.length > 1) destinationSelect.selectedIndex = 1;
+
+      [...locationsBySite.keys()].sort((a, b) => Number(a) - Number(b)).forEach(siteId => {
+        originSiteSelect.appendChild(option(siteId, siteId));
+        destinationSiteSelect.appendChild(option(siteId, siteId));
+      });
+      if (destinationSiteSelect.options.length > 1) destinationSiteSelect.selectedIndex = 1;
+      populateLocations(originSiteSelect, originLocationSelect);
+      populateLocations(destinationSiteSelect, destinationLocationSelect);
       document.querySelector("#date").value = config.default_date;
       document.querySelector("#time").value = config.default_time;
       document.querySelector("#k").value = config.default_top_k;
-      status.textContent = `${sites.length} SCATS sites loaded`;
+      status.textContent = `${locations.length} SCATS locations loaded`;
       renderGraph();
     }
 
@@ -351,6 +423,8 @@ HTML = """<!doctype html>
       const positions = projectGraph();
       const shortestPath = shortestRoute?.path || [];
       const pathNodes = new Set(shortestPath.map(String));
+      const originSite = selectedLocation(originSiteSelect, originLocationSelect).site;
+      const destinationSite = selectedLocation(destinationSiteSelect, destinationLocationSelect).site;
       const pathEdges = new Set();
       for (let i = 0; i < shortestPath.length - 1; i++) {
         pathEdges.add(`${shortestPath[i]}-${shortestPath[i + 1]}`);
@@ -410,8 +484,8 @@ HTML = """<!doctype html>
         circle.setAttribute("r", pathNodes.has(String(node.scats_site)) ? 7 : 5);
         const classes = ["graph-node"];
         if (pathNodes.has(String(node.scats_site))) classes.push("path");
-        if (String(node.scats_site) === String(originSelect.value)) classes.push("origin");
-        if (String(node.scats_site) === String(destinationSelect.value)) classes.push("destination");
+        if (String(node.scats_site) === originSite) classes.push("origin");
+        if (String(node.scats_site) === destinationSite) classes.push("destination");
         circle.setAttribute("class", classes.join(" "));
         const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
         title.textContent = `${node.scats_site} - ${node.location}`;
@@ -437,10 +511,14 @@ HTML = """<!doctype html>
       findButton.disabled = true;
       status.textContent = "Calculating routes...";
       rows.replaceChildren();
+      const origin = selectedLocation(originSiteSelect, originLocationSelect);
+      const destination = selectedLocation(destinationSiteSelect, destinationLocationSelect);
       const params = new URLSearchParams({
         model: modelSelect.value,
-        origin: originSelect.value,
-        destination: destinationSelect.value,
+        origin: origin.site,
+        origin_location: origin.location,
+        destination: destination.site,
+        destination_location: destination.location,
         date: document.querySelector("#date").value,
         time: document.querySelector("#time").value,
         k: document.querySelector("#k").value
@@ -460,9 +538,11 @@ HTML = """<!doctype html>
           `;
           rows.appendChild(tr);
         });
+        hasRouteResults = payload.routes.length > 0;
         status.className = "status";
         status.textContent = `${payload.routes.length} route(s) found. Shortest path highlighted on graph.`;
       } catch (error) {
+        hasRouteResults = false;
         status.className = "status error";
         status.textContent = error.message;
       } finally {
@@ -471,8 +551,22 @@ HTML = """<!doctype html>
     }
 
     findButton.addEventListener("click", findRoutes);
-    originSelect.addEventListener("change", () => renderGraph());
-    destinationSelect.addEventListener("change", () => renderGraph());
+    modelSelect.addEventListener("change", markRouteResultsStale);
+    originSiteSelect.addEventListener("change", () => {
+      populateLocations(originSiteSelect, originLocationSelect);
+      markRouteResultsStale();
+    });
+    originLocationSelect.addEventListener("change", markRouteResultsStale);
+    destinationSiteSelect.addEventListener("change", () => {
+      populateLocations(destinationSiteSelect, destinationLocationSelect);
+      markRouteResultsStale();
+    });
+    destinationLocationSelect.addEventListener("change", markRouteResultsStale);
+    ["#date", "#time", "#k"].forEach(selector => {
+      const input = document.querySelector(selector);
+      input.addEventListener("input", markRouteResultsStale);
+      input.addEventListener("change", markRouteResultsStale);
+    });
     loadDefaults().catch(error => {
       status.className = "status error";
       status.textContent = error.message;
@@ -502,6 +596,8 @@ class TbrgsHandler(BaseHTTPRequestHandler):
                 for site in sorted(load_scats_sites().values(), key=lambda item: item.scats_site)
             ]
             self._send_json(sites)
+        elif parsed.path == "/api/locations":
+            self._send_json(load_scats_locations())
         elif parsed.path == "/api/graph":
             sites_by_id = load_scats_sites()
             edge_map = build_realistic_scats_edges(sites_by_id)
@@ -544,7 +640,9 @@ class TbrgsHandler(BaseHTTPRequestHandler):
             params = parse_qs(query)
             origin = int(params.get("origin", [""])[0])
             destination = int(params.get("destination", [""])[0])
-            model_id = params.get("model", ["xgboost_global"])[0]
+            origin_location = params.get("origin_location", [""])[0] or None
+            destination_location = params.get("destination_location", [""])[0] or None
+            model_id = params.get("model", ["xgboost"])[0]
             k = int(params.get("k", ["5"])[0])
             timestamp = pd.Timestamp(f"{params.get('date', ['2006-10-23'])[0]} {params.get('time', ['08:00'])[0]}")
             routes = find_top_k_routes(
@@ -553,6 +651,8 @@ class TbrgsHandler(BaseHTTPRequestHandler):
                 timestamp,
                 model_id,
                 k=k,
+                origin_location=origin_location,
+                destination_location=destination_location,
             )
             self._send_json(
                 {
@@ -565,6 +665,7 @@ class TbrgsHandler(BaseHTTPRequestHandler):
                                 {
                                     "from_site": step.from_site,
                                     "to_site": step.to_site,
+                                    "from_location": step.from_location,
                                     "distance_km": step.distance_km,
                                     "predicted_flow_hour": step.predicted_flow_hour,
                                     "speed_kmh": step.speed_kmh,
