@@ -19,6 +19,11 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 
+try:
+    from loss_curve import save_loss_curve
+except ModuleNotFoundError:
+    from src.models.loss_curve import save_loss_curve
+
 
 def parse_args():
     """Parse command-line arguments / use defaults"""
@@ -134,7 +139,9 @@ def evaluate_model(model, X_test, y_test, y_scaler):
 
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae  = mean_absolute_error(y_true, y_pred)
-    return {"rmse": float(rmse), "mae": float(mae)}
+    y_range = np.max(y_true) - np.min(y_true)
+    nrmse = rmse / y_range if y_range else np.nan
+    return {"rmse": float(rmse), "mae": float(mae), "nrmse": float(nrmse)}
 
 
 def get_best_epoch(history):
@@ -157,8 +164,11 @@ def save_results(model, metrics, args, history, output_dir):
     for key, value in config.items():
         if isinstance(value, Path):
             config[key] = str(value)
+    config["feature_scaling"] = "minmax_X_train"
+    config["target_scaling"] = "minmax_y_train"
 
     best_epoch, best_val_loss = get_best_epoch(history)
+    loss_curve_path = output_dir / "loss_curve.svg"
     full_metrics = {
         "validation": metrics["validation"],
         "test": metrics["test"],
@@ -168,6 +178,7 @@ def save_results(model, metrics, args, history, output_dir):
         "best_epoch": best_epoch,
         "best_val_loss": best_val_loss,
         "early_stopping_enabled": not args.no_early_stopping,
+        "loss_curve": str(loss_curve_path),
     }
     
     with open(output_dir / "metrics.json", "w") as f:
@@ -176,6 +187,7 @@ def save_results(model, metrics, args, history, output_dir):
     history_df = pd.DataFrame(history.history)
     history_df.insert(0, "epoch", range(1, len(history_df) + 1))
     history_df.to_csv(output_dir / "history.csv", index=False)
+    save_loss_curve(history_df, loss_curve_path, "GRU Loss Curve")
     print(f"Saved model and results to {output_dir}")
 
 
@@ -209,8 +221,16 @@ def main():
         "validation": evaluate_model(model, X_val, y_val, y_scaler),
         "test": evaluate_model(model, X_test, y_test, y_scaler),
     }
-    print(f"Validation RMSE: {metrics['validation']['rmse']:.4f}, MAE: {metrics['validation']['mae']:.4f}")
-    print(f"Test RMSE: {metrics['test']['rmse']:.4f}, MAE: {metrics['test']['mae']:.4f}")
+    print(
+        f"Validation RMSE: {metrics['validation']['rmse']:.4f}, "
+        f"MAE: {metrics['validation']['mae']:.4f}, "
+        f"NRMSE: {metrics['validation']['nrmse']:.4f}"
+    )
+    print(
+        f"Test RMSE: {metrics['test']['rmse']:.4f}, "
+        f"MAE: {metrics['test']['mae']:.4f}, "
+        f"NRMSE: {metrics['test']['nrmse']:.4f}"
+    )
 
     save_results(model, metrics, args, history, args.output)
 

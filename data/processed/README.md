@@ -11,6 +11,7 @@ Optional flags:
 - `--output-dir "data/processed"`
 - `--train-ratio 0.7 --val-ratio 0.15 --test-ratio 0.15`
 - `--sequence-length 8`
+- `--series-key site|location`
 - `--skip-sequences`
 
 ## Generated files
@@ -28,11 +29,15 @@ Optional flags:
 - `latitude` and `longitude`: SCATS site coordinates from the source workbook.
 - `flow_15min`: observed traffic flow for the 15-minute interval.
 - `flow_hour_simple`: `flow_15min * 4`.
-- `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per site.
+- `flow_hour_rolling`: rolling 1-hour flow over current and previous 3 intervals per series.
 - `day_of_week`: Monday=0 ... Sunday=6.
 - `hour`: hour from timestamp.
 - `minute`: minute from timestamp.
 - `interval_index`: index from 0 to 95 across the day.
+- `location_encoded`: normalized numeric location identity for sequence models.
+
+## Series key
+Use `--series-key site` to collapse all detector locations under each SCATS site. Use `--series-key location` to keep each `scats_site + location` stream separate.
 
 ## Why chronological split
 Time-series models must learn from past data to predict future data. Chronological split avoids leakage that can happen with random shuffling.
