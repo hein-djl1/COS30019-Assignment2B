@@ -73,7 +73,7 @@ def load_scats_sites(
         for row in df.itertuples(index=False)
     }
 
-
+#for calculating travel time using distance.
 def haversine_km(a: ScatsSite, b: ScatsSite) -> float:
     earth_radius_km = 6371.0
     lat1 = radians(a.latitude)
@@ -276,9 +276,3 @@ def build_realistic_scats_adjacency(
         edges[to_site].add(from_site)
     return {site_id: sorted(neighbours) for site_id, neighbours in edges.items()}
 
-
-def build_nearest_neighbour_edges(
-    sites: dict[int, ScatsSite],
-    neighbours_per_site: int = 4,
-) -> dict[int, list[int]]:
-    return build_realistic_scats_adjacency(sites)

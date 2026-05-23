@@ -5,7 +5,8 @@ Traffic-Based Route Guidance System for the Boroondara SCATS dataset.
 The current implementation integrates:
 
 - SCATS data preprocessing
-- A global XGBoost traffic-flow prediction model
+- An XGBoost traffic-flow prediction model using `scats_site + location`
+- LSTM and GRU traffic-flow prediction models
 - Travel-time conversion from predicted traffic flow
 - Part A A* search from the `Search/` folder
 - A browser GUI with model selection, route table, and highlighted graph path
@@ -27,8 +28,8 @@ http://127.0.0.1:8000
 The GUI lets you choose:
 
 - ML model
-- origin SCATS site
-- destination SCATS site
+- origin SCATS site and location
+- destination SCATS site and location
 - date and time
 - number of routes to return
 
@@ -40,6 +41,7 @@ The graph highlights the shortest A* path and shows the estimated edge cost on e
 Search/                  Part A search algorithms and graph classes
 Info/                    Assignment data files, ignored by git
 data/processed/          Cleaned SCATS data and generated train/validation/test splits
+data/processed_location/ Location-level train/validation/test splits for XGBoost
 data/models/             Trained model artifacts
 src/data/                Preprocessing code
 src/models/              Model training code
@@ -73,18 +75,24 @@ and writes:
 - `data/processed/scats_sequences.npz`
 - `data/processed/metadata.json`
 
-The processed data includes SCATS site location, latitude, and longitude, so the global model and graph can use location information.
+The processed data includes SCATS site location, latitude, and longitude, so the models and graph can use location information.
 
-## Train the Global XGBoost Model
+To keep each SCATS location separate instead of collapsing all locations under a site:
 
 ```powershell
-.\.venv\Scripts\python src\models\xgboost_baseline.py
+.\.venv\Scripts\python src\data\preprocess_scats.py --series-key location --output-dir data\processed_location
+```
+
+## Train the XGBoost Model
+
+```powershell
+.\.venv\Scripts\python src\models\xgboost_model.py
 ```
 
 Outputs are saved to:
 
 ```text
-data/models/xgboost_baseline/
+data/models/xgboost/
 ```
 
 Current model features include:
@@ -94,6 +102,7 @@ Current model features include:
 - time features
 - SCATS site one-hot features
 - latitude and longitude
+- location one-hot features
 
 ## Routing Logic
 
@@ -159,13 +168,7 @@ def predict(self, request: PredictionRequest) -> PredictionResult:
     ...
 ```
 
-Then register it with:
-
-```python
-registry.register("model_id", ModelFactory)
-```
-
-Once registered, the browser UI model dropdown can use it without changing the routing code.
+Add the model class to the registry factories so the browser UI model dropdown can use it without changing the routing code.
 
 ## Configuration
 
@@ -181,7 +184,7 @@ Example:
 {
   "host": "127.0.0.1",
   "port": 8000,
-  "default_model": "xgboost_global",
+  "default_model": "xgboost",
   "default_date": "2006-10-23",
   "default_time": "08:00",
   "default_top_k": 5
@@ -193,4 +196,4 @@ Example:
 - The current traffic estimate is static for the selected departure timestamp, not time-dependent as the vehicle traverses each edge.
 - The SCATS graph is inferred from SCATS site labels and coordinates because no explicit road-edge shapefile is included.
 - Some graph filtering is manual to keep the displayed network focused and usable.
-- The global XGBoost model is a baseline; LSTM and GRU models still need to be integrated.
+- The XGBoost model uses a heuristic to choose the source location for each graph edge because no explicit lane/turn-edge mapping is included.

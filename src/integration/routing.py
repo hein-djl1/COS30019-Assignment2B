@@ -2,21 +2,25 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from math import sqrt
 from pathlib import Path
 
 import pandas as pd
 
 from src.integration.scats_network import (
+    ScatsEdge,
     ScatsSite,
-    build_realistic_scats_adjacency,
+    build_realistic_scats_edges,
     haversine_km,
     load_scats_sites,
+    roads_from_location,
 )
 from src.services.prediction import predict_traffic_flow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_LOCATION_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed_location" / "cleaned_scats_long.csv"
 SEARCH_DIR = PROJECT_ROOT / "Search"
 if str(SEARCH_DIR) not in sys.path:
     sys.path.insert(0, str(SEARCH_DIR))
@@ -37,6 +41,7 @@ class RouteStep:
     predicted_flow_hour: float
     speed_kmh: float
     travel_time_minutes: float
+    from_location: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,13 +68,54 @@ def speed_from_flow(flow_per_hour: float, speed_limit_kmh: float = DEFAULT_SPEED
     return max(5.0, min(speed_limit_kmh, speed))
 
 
+@lru_cache(maxsize=1)
+def load_site_locations(
+    processed_path: Path = DEFAULT_LOCATION_PROCESSED_PATH,
+) -> dict[int, tuple[str, ...]]:
+    if not processed_path.exists():
+        return {}
+
+    df = pd.read_csv(processed_path, usecols=["scats_site", "location"])
+    df["location"] = df["location"].fillna("").astype(str)
+    df = df.drop_duplicates(["scats_site", "location"])
+    return {
+        int(site): tuple(group["location"].sort_values().tolist())
+        for site, group in df.groupby("scats_site")
+    }
+
+
+def choose_edge_location(
+    from_site: ScatsSite,
+    edge: ScatsEdge,
+    locations_by_site: dict[int, tuple[str, ...]],
+) -> str | None:
+    locations = locations_by_site.get(from_site.scats_site, ())
+    if not locations:
+        return None
+
+    # The data has location labels, not lane-to-edge mappings, so match by road name first.
+    for location in locations:
+        if edge.road in roads_from_location(location):
+            return location
+
+    if from_site.location in locations:
+        return from_site.location
+    return locations[0]
+
+
 def estimate_edge(
     from_site: ScatsSite,
     to_site: ScatsSite,
     timestamp: pd.Timestamp,
     model_id: str,
+    from_location: str | None = None,
 ) -> RouteStep:
-    prediction = predict_traffic_flow(from_site.scats_site, timestamp, model_id=model_id)
+    prediction = predict_traffic_flow(
+        from_site.scats_site,
+        timestamp,
+        model_id=model_id,
+        location=from_location,
+    )
     distance_km = haversine_km(from_site, to_site)
     speed_kmh = speed_from_flow(prediction.predicted_flow_hour)
     travel_time_minutes = (distance_km / speed_kmh) * 60.0 + INTERSECTION_DELAY_MINUTES
@@ -80,6 +126,7 @@ def estimate_edge(
         predicted_flow_hour=prediction.predicted_flow_hour,
         speed_kmh=speed_kmh,
         travel_time_minutes=travel_time_minutes,
+        from_location=prediction.location,
     )
 
 
@@ -90,6 +137,8 @@ def find_top_k_routes(
     model_id: str,
     k: int = 5,
     neighbours_per_site: int = 4,
+    origin_location: str | None = None,
+    destination_location: str | None = None,
 ) -> list[RouteResult]:
     sites = load_scats_sites()
     if origin not in sites:
@@ -97,13 +146,28 @@ def find_top_k_routes(
     if destination not in sites:
         raise ValueError(f"Destination SCATS site {destination} has no usable location.")
 
-    edges = build_realistic_scats_adjacency(sites)
+    edge_map = build_realistic_scats_edges(sites)
+    edges: dict[int, list[int]] = {site_id: [] for site_id in sites}
+    edge_lookup: dict[tuple[int, int], ScatsEdge] = {}
+    for (from_id, to_id), edge in edge_map.items():
+        edges[from_id].append(to_id)
+        edges[to_id].append(from_id)
+        edge_lookup[(from_id, to_id)] = edge
+        edge_lookup[(to_id, from_id)] = edge
+    edges = {site_id: sorted(neighbours) for site_id, neighbours in edges.items()}
+    locations_by_site = load_site_locations() if model_id == "xgboost" else {}
     edge_cache: dict[tuple[int, int], RouteStep] = {}
 
     def get_step(a: int, b: int) -> RouteStep:
         key = (a, b)
         if key not in edge_cache:
-            edge_cache[key] = estimate_edge(sites[a], sites[b], timestamp, model_id)
+            # The user-selected origin location applies only to the first outgoing edge.
+            from_location = (
+                origin_location
+                if a == origin and origin_location
+                else choose_edge_location(sites[a], edge_lookup[key], locations_by_site)
+            )
+            edge_cache[key] = estimate_edge(sites[a], sites[b], timestamp, model_id, from_location)
         return edge_cache[key]
 
     def build_search_graph(
