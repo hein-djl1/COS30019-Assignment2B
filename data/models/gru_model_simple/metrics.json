@@ -1,21 +1,21 @@
 {
   "validation": {
-    "rmse": 18.262518782609266,
-    "mae": 12.38474178314209,
-    "nrmse": 0.036745510628992485
+    "rmse": 18.384968032622382,
+    "mae": 11.952651023864746,
+    "nrmse": 0.026453191413845153
   },
   "test": {
-    "rmse": 17.49423384356793,
-    "mae": 12.232012748718262,
-    "nrmse": 0.0351996656812232
+    "rmse": 18.239616889276434,
+    "mae": 12.061152458190918,
+    "nrmse": 0.029609767677396807
   },
   "test_metrics": {
-    "rmse": 17.49423384356793,
-    "mae": 12.232012748718262,
-    "nrmse": 0.0351996656812232
+    "rmse": 18.239616889276434,
+    "mae": 12.061152458190918,
+    "nrmse": 0.029609767677396807
   },
   "config": {
-    "data": "data\\processed\\scats_sequences.npz",
+    "data": "data\\processed_location\\scats_sequences.npz",
     "output": "data\\models\\gru_model_simple",
     "units": 64,
     "learning_rate": 0.0005,
@@ -28,7 +28,7 @@
   },
   "epochs_trained": 20,
   "best_epoch": 20,
-  "best_val_loss": 0.0011696043657138944,
+  "best_val_loss": 0.0008356246980838478,
   "early_stopping_enabled": true,
   "loss_curve": "data\\models\\gru_model_simple\\loss_curve.svg"
 }

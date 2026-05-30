@@ -155,7 +155,7 @@ def find_top_k_routes(
         edge_lookup[(from_id, to_id)] = edge
         edge_lookup[(to_id, from_id)] = edge
     edges = {site_id: sorted(neighbours) for site_id, neighbours in edges.items()}
-    locations_by_site = load_site_locations() if model_id == "xgboost" else {}
+    locations_by_site = load_site_locations()
     edge_cache: dict[tuple[int, int], RouteStep] = {}
 
     def get_step(a: int, b: int) -> RouteStep:

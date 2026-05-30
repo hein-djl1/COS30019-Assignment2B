@@ -1,0 +1,22 @@
+{
+  "validation": {
+    "rmse": 22.18863814752489,
+    "mae": 15.151739120483398,
+    "nrmse": 0.044645147178118495
+  },
+  "test": {
+    "rmse": 21.334193848103038,
+    "mae": 15.096202850341797,
+    "nrmse": 0.04292594335634414
+  },
+  "config": {
+    "data": "data\\processed\\scats_sequences.npz",
+    "model_path": "data\\models\\lstm_model_site.h5",
+    "epochs": 20,
+    "batch_size": 32,
+    "units": 64,
+    "target_scaling": "minmax_y_train"
+  },
+  "epochs_trained": 20,
+  "loss_curve": "data\\models\\lstm_model_site\\loss_curve.svg"
+}

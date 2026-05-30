@@ -1,0 +1,34 @@
+{
+  "validation": {
+    "rmse": 17.936192481472254,
+    "mae": 12.178784370422363,
+    "nrmse": 0.03608891847378723
+  },
+  "test": {
+    "rmse": 17.221498688843656,
+    "mae": 11.984942436218262,
+    "nrmse": 0.034650902794454035
+  },
+  "test_metrics": {
+    "rmse": 17.221498688843656,
+    "mae": 11.984942436218262,
+    "nrmse": 0.034650902794454035
+  },
+  "config": {
+    "data": "data\\processed\\scats_sequences.npz",
+    "output": "data\\models\\gru_model_site",
+    "units": 64,
+    "learning_rate": 0.0005,
+    "epochs": 20,
+    "batch_size": 32,
+    "patience": 20,
+    "no_early_stopping": false,
+    "feature_scaling": "minmax_X_train",
+    "target_scaling": "minmax_y_train"
+  },
+  "epochs_trained": 20,
+  "best_epoch": 19,
+  "best_val_loss": 0.0011281787883490324,
+  "early_stopping_enabled": true,
+  "loss_curve": "data\\models\\gru_model_site\\loss_curve.svg"
+}

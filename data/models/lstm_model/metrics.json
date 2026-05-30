@@ -1,16 +1,16 @@
 {
   "validation": {
-    "rmse": 24.24971936250307,
-    "mae": 17.76837158203125,
-    "nrmse": 0.04879219187626372
+    "rmse": 23.74176075217003,
+    "mae": 15.810486793518066,
+    "nrmse": 0.03416080683765472
   },
   "test": {
-    "rmse": 23.249728293523265,
-    "mae": 17.434494018554688,
-    "nrmse": 0.04678013741151563
+    "rmse": 22.888337129693365,
+    "mae": 15.6508207321167,
+    "nrmse": 0.037156391444307414
   },
   "config": {
-    "data": "data\\processed\\scats_sequences.npz",
+    "data": "data\\processed_location\\scats_sequences.npz",
     "model_path": "data/models/lstm_model.h5",
     "epochs": 20,
     "batch_size": 32,

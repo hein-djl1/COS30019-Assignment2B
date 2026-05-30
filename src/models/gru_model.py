@@ -28,9 +28,9 @@ except ModuleNotFoundError:
 def parse_args():
     """Parse command-line arguments / use defaults"""
     parser = argparse.ArgumentParser(description="Train GRU for traffic prediction")
-    parser.add_argument("--data", type=Path, default="data/processed/scats_sequences.npz",
+    parser.add_argument("--data", type=Path, default="data/processed_location/scats_sequences.npz",
                         help="Path to .npz sequence file")
-    parser.add_argument("--output", type=Path, default="data/models/gru_model",
+    parser.add_argument("--output", type=Path, default="data/models/gru_model_simple",
                         help="Output directory for model and metrics")
     parser.add_argument("--units", type=int, default=64, help="Number of GRU units")
     parser.add_argument("--learning-rate", type=float, default=0.0005, help="Initial learning rate")
