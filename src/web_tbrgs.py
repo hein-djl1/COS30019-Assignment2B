@@ -18,19 +18,30 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config" / "tbrgs_config.json"
 LOCATION_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed_location" / "cleaned_scats_long.csv"
 PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned_scats_long.csv"
+MODEL_ID_ALIASES = {
+    "xgboost": "xgboost_location",
+    "gru": "gru_location",
+    "lstm": "lstm_location",
+}
+
+
+def normalize_model_id(model_id: object) -> str:
+    value = str(model_id)
+    return MODEL_ID_ALIASES.get(value, value)
 
 
 def load_config() -> dict[str, object]:
     defaults: dict[str, object] = {
         "host": HOST,
         "port": PORT,
-        "default_model": "xgboost",
+        "default_model": "xgboost_location",
         "default_date": "2006-10-23",
         "default_time": "08:00",
         "default_top_k": 5,
     }
     if CONFIG_PATH.exists():
         defaults.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    defaults["default_model"] = normalize_model_id(defaults.get("default_model", "xgboost_location"))
     return defaults
 
 
@@ -209,11 +220,13 @@ HTML = """<!doctype html>
     }
     .graph-label {
       fill: #172026;
-      font-size: 11px;
+      font-size: 12px;
+      font-weight: 700;
       paint-order: stroke;
       stroke: #ffffff;
       stroke-width: 3px;
       stroke-linejoin: round;
+      pointer-events: none;
     }
     .graph-cost {
       fill: #8a3f13;
@@ -372,7 +385,10 @@ HTML = """<!doctype html>
       graphData = graph;
       const config = await fetch("/api/config").then(r => r.json());
       models.forEach(model => modelSelect.appendChild(option(model.id, model.label)));
-      modelSelect.value = config.default_model;
+      const hasDefaultModel = models.some(model => model.id === config.default_model);
+      modelSelect.value = hasDefaultModel
+        ? config.default_model
+        : (models[0]?.id || "");
 
       locationsBySite = new Map();
       locations.forEach(location => {
@@ -491,14 +507,13 @@ HTML = """<!doctype html>
         title.textContent = `${node.scats_site} - ${node.location}`;
         circle.appendChild(title);
         group.appendChild(circle);
-        if (pathNodes.has(String(node.scats_site))) {
-          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-          text.setAttribute("x", pos.x + 9);
-          text.setAttribute("y", pos.y - 9);
-          text.setAttribute("class", "graph-label");
-          text.textContent = node.scats_site;
-          group.appendChild(text);
-        }
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", pos.x);
+        text.setAttribute("y", pos.y + 16);
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("class", "graph-label");
+        text.textContent = node.scats_site;
+        group.appendChild(text);
         nodeLayer.appendChild(group);
       });
 
@@ -642,7 +657,7 @@ class TbrgsHandler(BaseHTTPRequestHandler):
             destination = int(params.get("destination", [""])[0])
             origin_location = params.get("origin_location", [""])[0] or None
             destination_location = params.get("destination_location", [""])[0] or None
-            model_id = params.get("model", ["xgboost"])[0]
+            model_id = normalize_model_id(params.get("model", ["xgboost_location"])[0])
             k = int(params.get("k", ["5"])[0])
             timestamp = pd.Timestamp(f"{params.get('date', ['2006-10-23'])[0]} {params.get('time', ['08:00'])[0]}")
             routes = find_top_k_routes(

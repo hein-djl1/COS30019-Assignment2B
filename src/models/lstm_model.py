@@ -9,6 +9,7 @@ for building and evaluating an LSTM-based neural network model.
 # ---------------------------------------------------
 
 # Core data manipulation and file path handling
+import argparse
 import json
 import joblib
 import numpy as np
@@ -37,14 +38,41 @@ def evaluate_predictions(y_true, y_pred):
     return float(rmse), float(mae), float(nrmse)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train LSTM for traffic prediction")
+    parser.add_argument(
+        "--data",
+        type=Path,
+        default=Path("data/processed_location/scats_sequences.npz"),
+        help="Path to .npz sequence file",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("data/models/lstm_model"),
+        help="Directory for metrics/history/scaler/loss curve",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=Path("data/models/lstm_model.h5"),
+        help="Path to save trained .h5 model",
+    )
+    parser.add_argument("--epochs", type=int, default=20, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=32, help="Training batch size")
+    parser.add_argument("--units", type=int, default=64, help="Number of LSTM units")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
 
     # ---------------------------------------------------
     # LOAD PREPROCESSED DATA
     # ---------------------------------------------------
 
     # Define the path to the preprocessed sequence data
-    data_path = Path("data/processed/scats_sequences.npz")
+    data_path = args.data
 
     # Load the numpy archive dataset into memory
     data = np.load(data_path)
@@ -104,7 +132,7 @@ if __name__ == "__main__":
     # input_shape = (timesteps, features)
     model.add(
         LSTM(
-        64,
+        args.units,
         input_shape=(X_train.shape[1], X_train.shape[2])
         )
     )
@@ -144,10 +172,10 @@ if __name__ == "__main__":
         validation_data=(X_val, y_val),
 
         # Number of full passes through dataset
-        epochs=20,
+        epochs=args.epochs,
 
         # Number of samples processed at once
-        batch_size=32
+        batch_size=args.batch_size
     )
 
     # ---------------------------------------------------
@@ -192,10 +220,11 @@ if __name__ == "__main__":
     # ---------------------------------------------------
 
     # Save the trained LSTM model
-    model.save("data/models/lstm_model.h5")
+    args.model_path.parent.mkdir(parents=True, exist_ok=True)
+    model.save(args.model_path)
 
     # Save metrics and training history for model comparison
-    output_dir = Path("data/models/lstm_model")
+    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(y_scaler, output_dir / "y_scaler.pkl")
 
@@ -212,10 +241,10 @@ if __name__ == "__main__":
         },
         "config": {
             "data": str(data_path),
-            "model_path": "data/models/lstm_model.h5",
-            "epochs": 20,
-            "batch_size": 32,
-            "units": 64,
+            "model_path": str(args.model_path),
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "units": args.units,
             "target_scaling": "minmax_y_train",
         },
         "epochs_trained": len(history.history["loss"]),

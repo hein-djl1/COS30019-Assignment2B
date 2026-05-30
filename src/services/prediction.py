@@ -11,12 +11,16 @@ import pandas as pd
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned_scats_long.csv"
 DEFAULT_LOCATION_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed_location" / "cleaned_scats_long.csv"
+DEFAULT_SITE_PROCESSED_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned_scats_long.csv"
 DEFAULT_XGBOOST_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "xgboost"
+DEFAULT_XGBOOST_SITE_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "xgboost_site"
 DEFAULT_LSTM_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "lstm_model.h5"
 DEFAULT_LSTM_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "lstm_model"
+DEFAULT_LSTM_SITE_MODEL_PATH = PROJECT_ROOT / "data" / "models" / "lstm_model_site.h5"
+DEFAULT_LSTM_SITE_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "lstm_model_site"
 DEFAULT_GRU_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "gru_model_simple"
+DEFAULT_GRU_SITE_MODEL_DIR = PROJECT_ROOT / "data" / "models" / "gru_model_site"
 SEQUENCE_FEATURE_COLUMNS = [
     "flow_15min",
     "flow_hour_simple",
@@ -29,6 +33,87 @@ SEQUENCE_FEATURE_COLUMNS = [
     "longitude",
     "location_encoded",
 ]
+
+
+def _ensure_location_encoded_column(history: pd.DataFrame) -> pd.DataFrame:
+    if "location_encoded" in history.columns:
+        return history
+
+    if "location" not in history.columns:
+        history["location_encoded"] = 0.0
+        return history
+
+    history["location"] = history["location"].fillna("").astype(str)
+    location_values = sorted(history["location"].unique())
+    location_denominator = max(1, len(location_values) - 1)
+    location_codes = {
+        location: index / location_denominator
+        for index, location in enumerate(location_values)
+    }
+    history["location_encoded"] = history["location"].map(location_codes).astype(float)
+    return history
+
+
+def _resolve_sequence_feature_columns(model, history: pd.DataFrame) -> list[str]:
+    expected_features = int(model.input_shape[-1])
+    if expected_features == len(SEQUENCE_FEATURE_COLUMNS):
+        return SEQUENCE_FEATURE_COLUMNS
+    if expected_features == len(SEQUENCE_FEATURE_COLUMNS) - 1:
+        return [column for column in SEQUENCE_FEATURE_COLUMNS if column != "location_encoded"]
+
+    available = [column for column in SEQUENCE_FEATURE_COLUMNS if column in history.columns]
+    if len(available) == expected_features:
+        return available
+
+    raise ValueError(
+        f"Model expects {expected_features} input features, but no supported feature mapping was found."
+    )
+
+
+def _prepare_location_history(
+    history: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[tuple[int, str], pd.DataFrame], dict[int, list[str]]]:
+    if "location" not in history.columns:
+        history["location"] = ""
+    history["location"] = history["location"].fillna("").astype(str)
+    history = history.sort_values(["scats_site", "location", "timestamp"]).reset_index(drop=True)
+
+    location_history = {
+        (int(site), str(location)): group.sort_values("timestamp").reset_index(drop=True)
+        for (site, location), group in history.groupby(["scats_site", "location"])
+    }
+    locations_by_site = {
+        int(site): sorted(group["location"].drop_duplicates().astype(str).tolist())
+        for site, group in history.groupby("scats_site")
+    }
+    return history, location_history, locations_by_site
+
+
+def _resolve_location_request(
+    request: "PredictionRequest",
+    model_label: str,
+    locations_by_site: dict[int, list[str]],
+    strict_location: bool = True,
+) -> str:
+    locations = locations_by_site.get(request.scats_site)
+    if not locations:
+        raise ValueError(f"Unknown SCATS site: {request.scats_site}")
+    if request.location is not None:
+        location = str(request.location)
+        if location in locations:
+            return location
+        if strict_location:
+            raise ValueError(
+                f"Unknown location for SCATS site {request.scats_site}: {location}"
+            )
+        return locations[0]
+    if len(locations) == 1:
+        return locations[0]
+    if not strict_location:
+        return locations[0]
+    raise ValueError(
+        f"{model_label} requires a location for SCATS site {request.scats_site}."
+    )
 
 
 @dataclass(frozen=True)
@@ -65,20 +150,15 @@ class XGBoostModel:
         self,
         model_dir: Path = DEFAULT_XGBOOST_MODEL_DIR,
         processed_path: Path = DEFAULT_LOCATION_PROCESSED_PATH,
+        strict_location: bool = True,
     ) -> None:
         self.model = joblib.load(model_dir / "xgboost_model.joblib")
         self.feature_names = pd.read_json(model_dir / "feature_names.json", typ="series").tolist()
         self.history = pd.read_csv(processed_path, parse_dates=["timestamp"])
-        self.history["location"] = self.history["location"].fillna("").astype(str)
-        self.history = self.history.sort_values(["scats_site", "location", "timestamp"]).reset_index(drop=True)
-        self.location_history = {
-            (int(site), str(location)): group.sort_values("timestamp").reset_index(drop=True)
-            for (site, location), group in self.history.groupby(["scats_site", "location"])
-        }
-        self.locations_by_site = {
-            int(site): sorted(group["location"].drop_duplicates().astype(str).tolist())
-            for site, group in self.history.groupby("scats_site")
-        }
+        self.strict_location = strict_location
+        self.history, self.location_history, self.locations_by_site = _prepare_location_history(
+            self.history
+        )
 
     def predict(self, request: PredictionRequest) -> PredictionResult:
         location = self._resolve_location(request)
@@ -101,21 +181,11 @@ class XGBoostModel:
         )
 
     def _resolve_location(self, request: PredictionRequest) -> str:
-        locations = self.locations_by_site.get(request.scats_site)
-        if not locations:
-            raise ValueError(f"Unknown SCATS site: {request.scats_site}")
-        # XGBoost is trained per SCATS site + location, so ambiguous sites need a location.
-        if request.location is not None:
-            location = str(request.location)
-            if location in locations:
-                return location
-            raise ValueError(
-                f"Unknown location for SCATS site {request.scats_site}: {location}"
-            )
-        if len(locations) == 1:
-            return locations[0]
-        raise ValueError(
-            f"XGBoost requires a location for SCATS site {request.scats_site}."
+        return _resolve_location_request(
+            request,
+            self.label,
+            self.locations_by_site,
+            strict_location=self.strict_location,
         )
 
     def _build_feature_row(self, request: PredictionRequest, location: str) -> pd.DataFrame:
@@ -165,7 +235,8 @@ class LSTMModel:
         self,
         model_path: Path = DEFAULT_LSTM_MODEL_PATH,
         model_dir: Path = DEFAULT_LSTM_MODEL_DIR,
-        processed_path: Path = DEFAULT_PROCESSED_PATH,
+        processed_path: Path = DEFAULT_LOCATION_PROCESSED_PATH,
+        strict_location: bool = True,
     ) -> None:
         # Load trained LSTM model
         self.model = load_model(
@@ -180,28 +251,28 @@ class LSTMModel:
             processed_path,
             parse_dates=["timestamp"]
         )
+        self.strict_location = strict_location
+        self.history = _ensure_location_encoded_column(self.history)
+        self.history, self.location_history, self.locations_by_site = _prepare_location_history(
+            self.history
+        )
 
-        # Sort by SCATS site and timestamp
-        self.history = self.history.sort_values(
-            ["scats_site", "timestamp"]
-        ).reset_index(drop=True)
-
-        # Group traffic history by SCATS site
-        self.site_history = {
-            int(site): group.sort_values("timestamp").reset_index(drop=True)
-            for site, group in self.history.groupby("scats_site")
-        }
+        self.sequence_feature_columns = _resolve_sequence_feature_columns(self.model, self.history)
 
     def predict(self, request: PredictionRequest) -> PredictionResult:
-
-        # Check whether SCATS site exists
-        if request.scats_site not in self.site_history:
+        location = _resolve_location_request(
+            request,
+            self.label,
+            self.locations_by_site,
+            strict_location=self.strict_location,
+        )
+        key = (request.scats_site, location)
+        if key not in self.location_history:
             raise ValueError(
-                f"Unknown SCATS site: {request.scats_site}"
+                f"Unknown SCATS location: {request.scats_site} / {location}"
             )
 
-        # Get traffic history for selected SCATS site
-        site_df = self.site_history[request.scats_site]
+        site_df = self.location_history[key]
 
         # Convert request timestamp
         ts = pd.Timestamp(request.timestamp)
@@ -219,7 +290,7 @@ class LSTMModel:
         sequence = prior.iloc[-8:]
 
         # Build feature matrix
-        features = sequence[SEQUENCE_FEATURE_COLUMNS].values.astype(np.float32)
+        features = sequence[self.sequence_feature_columns].values.astype(np.float32)
 
         # Reshape into LSTM input format
         features = np.expand_dims(features, axis=0)
@@ -243,6 +314,7 @@ class LSTMModel:
             timestamp=request.timestamp,
             predicted_flow_15min=prediction,
             predicted_flow_hour=prediction * 4.0,
+            location=location,
         )
 
 class GRUModel:
@@ -252,31 +324,43 @@ class GRUModel:
     def __init__(
         self,
         model_dir: Path = DEFAULT_GRU_MODEL_DIR,
-        processed_path: Path = DEFAULT_PROCESSED_PATH,
+        processed_path: Path = DEFAULT_LOCATION_PROCESSED_PATH,
+        strict_location: bool = True,
     ) -> None:
         self.model = load_model(model_dir / "gru_model.keras", compile=False)
         self.X_scaler = joblib.load(model_dir / "X_scaler.pkl")
         self.y_scaler = joblib.load(model_dir / "y_scaler.pkl")
 
+        self.strict_location = strict_location
         self.history = pd.read_csv(processed_path, parse_dates=["timestamp"])
-        self.history = self.history.sort_values(["scats_site", "timestamp"]).reset_index(drop=True)
-        self.site_history = {
-            int(site): group.sort_values("timestamp").reset_index(drop=True)
-            for site, group in self.history.groupby("scats_site")
-        }
+        self.history = _ensure_location_encoded_column(self.history)
+        self.history, self.location_history, self.locations_by_site = _prepare_location_history(
+            self.history
+        )
+        self.sequence_feature_columns = _resolve_sequence_feature_columns(self.model, self.history)
 
     def predict(self, request: PredictionRequest) -> PredictionResult:
-        if request.scats_site not in self.site_history:
-            raise ValueError(f"Unknown SCATS site: {request.scats_site}")
-
-        site_df = self.site_history[request.scats_site]
+        location = _resolve_location_request(
+            request,
+            self.label,
+            self.locations_by_site,
+            strict_location=self.strict_location,
+        )
+        key = (request.scats_site, location)
+        if key not in self.location_history:
+            raise ValueError(
+                f"Unknown SCATS location: {request.scats_site} / {location}"
+            )
+        site_df = self.location_history[key]
         ts = pd.Timestamp(request.timestamp)
         prior = site_df[site_df["timestamp"] <= ts]
         if len(prior) < 8:
-            raise ValueError(f"Not enough history for SCATS site {request.scats_site}")
+            raise ValueError(
+                f"Not enough history for SCATS site {request.scats_site} at location {location}"
+            )
 
         sequence = prior.iloc[-8:]
-        features = sequence[SEQUENCE_FEATURE_COLUMNS].values.astype(np.float32)
+        features = sequence[self.sequence_feature_columns].values.astype(np.float32)
         features = self.X_scaler.transform(features)
         features = np.expand_dims(features, axis=0)
 
@@ -292,14 +376,98 @@ class GRUModel:
             timestamp=request.timestamp,
             predicted_flow_15min=prediction,
             predicted_flow_hour=prediction * 4.0,
+            location=location,
         )
+
+
+class XGBoostLocationModel(XGBoostModel):
+    model_id = "xgboost_location"
+    label = "XGBoost (Location-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_dir=DEFAULT_XGBOOST_MODEL_DIR,
+            processed_path=DEFAULT_LOCATION_PROCESSED_PATH,
+            strict_location=True,
+        )
+
+
+class XGBoostSiteModel(XGBoostModel):
+    model_id = "xgboost_site"
+    label = "XGBoost (Site-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_dir=DEFAULT_XGBOOST_SITE_MODEL_DIR,
+            processed_path=DEFAULT_SITE_PROCESSED_PATH,
+            strict_location=False,
+        )
+
+
+class LSTMLocationModel(LSTMModel):
+    model_id = "lstm_location"
+    label = "LSTM (Location-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_path=DEFAULT_LSTM_MODEL_PATH,
+            model_dir=DEFAULT_LSTM_MODEL_DIR,
+            processed_path=DEFAULT_LOCATION_PROCESSED_PATH,
+            strict_location=True,
+        )
+
+
+class LSTMSiteModel(LSTMModel):
+    model_id = "lstm_site"
+    label = "LSTM (Site-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_path=DEFAULT_LSTM_SITE_MODEL_PATH,
+            model_dir=DEFAULT_LSTM_SITE_MODEL_DIR,
+            processed_path=DEFAULT_SITE_PROCESSED_PATH,
+            strict_location=False,
+        )
+
+
+class GRULocationModel(GRUModel):
+    model_id = "gru_location"
+    label = "GRU (Location-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_dir=DEFAULT_GRU_MODEL_DIR,
+            processed_path=DEFAULT_LOCATION_PROCESSED_PATH,
+            strict_location=True,
+        )
+
+
+class GRUSiteModel(GRUModel):
+    model_id = "gru_site"
+    label = "GRU (Site-level)"
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_dir=DEFAULT_GRU_SITE_MODEL_DIR,
+            processed_path=DEFAULT_SITE_PROCESSED_PATH,
+            strict_location=False,
+        )
+
 
 class ModelRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, Callable[[], TrafficModel]] = {
-            XGBoostModel.model_id: XGBoostModel,
-            LSTMModel.model_id: LSTMModel,
-            GRUModel.model_id: GRUModel,
+            XGBoostLocationModel.model_id: XGBoostLocationModel,
+            XGBoostSiteModel.model_id: XGBoostSiteModel,
+            GRULocationModel.model_id: GRULocationModel,
+            GRUSiteModel.model_id: GRUSiteModel,
+            LSTMLocationModel.model_id: LSTMLocationModel,
+            LSTMSiteModel.model_id: LSTMSiteModel,
+        }
+        self._legacy_aliases: dict[str, str] = {
+            "xgboost": XGBoostLocationModel.model_id,
+            "gru": GRULocationModel.model_id,
+            "lstm": LSTMLocationModel.model_id,
         }
         self._instances: dict[str, TrafficModel] = {}
 
@@ -311,6 +479,7 @@ class ModelRegistry:
         return labels
 
     def get(self, model_id: str) -> TrafficModel:
+        model_id = self._legacy_aliases.get(model_id, model_id)
         if model_id not in self._factories:
             raise ValueError(f"Model '{model_id}' is not registered.")
         if model_id not in self._instances:
@@ -324,7 +493,7 @@ registry = ModelRegistry()
 def predict_traffic_flow(
     scats_site: int,
     timestamp: pd.Timestamp,
-    model_id: str = XGBoostModel.model_id,
+    model_id: str = XGBoostLocationModel.model_id,
     location: str | None = None,
     horizon_steps: int = 1,
 ) -> PredictionResult:

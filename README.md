@@ -16,6 +16,7 @@ The current implementation integrates:
 From the repository root:
 
 ```powershell
+.\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python run_tbrgs.py
 ```
 

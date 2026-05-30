@@ -3,3 +3,18 @@ Info/
 __pycache__/
 *.pyc
 
+# Excel data files
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+~$*.xls*
+
+# Cleaned/processed dataset outputs
+data/processed/*.csv
+data/processed/*.npz
+data/processed/*.json
+data/processed_location/*.csv
+data/processed_location/*.npz
+data/processed_location/*.json
+
