@@ -1,61 +1,26 @@
 # COS30019 Assignment 2B - TBRGS
 
-Traffic-Based Route Guidance System for the Boroondara SCATS dataset.
+## Run the app
 
-The current implementation integrates:
-
-- SCATS data preprocessing
-- An XGBoost traffic-flow prediction model using `scats_site + location`
-- LSTM and GRU traffic-flow prediction models
-- Travel-time conversion from predicted traffic flow
-- Part A A* search from the `Search/` folder
-- A browser GUI with model selection, route table, and highlighted graph path
-
-## Quick Start
-
-From the repository root:
+From the project root:
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python run_tbrgs.py
 ```
 
-Then open:
+Open this in your browser:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-The GUI lets you choose:
+Stop the server with `Ctrl+C`.
 
-- ML model
-- origin SCATS site and location
-- destination SCATS site and location
-- date and time
-- number of routes to return
+## Optional: if required files are missing
 
-The graph highlights the shortest A* path and shows the estimated edge cost on each highlighted edge.
-
-## Project Structure
-
-```text
-Search/                  Part A search algorithms and graph classes
-Info/                    Assignment data files, ignored by git
-data/processed/          Cleaned SCATS data and generated train/validation/test splits
-data/processed_location/ Location-level train/validation/test splits for XGBoost
-data/models/             Trained model artifacts
-src/data/                Preprocessing code
-src/models/              Model training code
-src/services/            Model registry and prediction interface
-src/integration/         SCATS graph, edge-cost, and routing integration
-src/web_tbrgs.py         Browser GUI and API server
-run_tbrgs.py             GUI runner
-config/tbrgs_config.json GUI defaults
-```
-
-## Data Processing
-
-To regenerate processed data:
+If processed data is missing:
 
 ```powershell
 .\.venv\Scripts\python src\data\preprocess_scats.py
