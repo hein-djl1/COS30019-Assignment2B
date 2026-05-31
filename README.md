@@ -84,27 +84,6 @@ To keep each SCATS location separate instead of collapsing all locations under a
 .\.venv\Scripts\python src\data\preprocess_scats.py --series-key location --output-dir data\processed_location
 ```
 
-## Train the XGBoost Model
-
-```powershell
-.\.venv\Scripts\python src\models\xgboost_model.py
-```
-
-Outputs are saved to:
-
-```text
-data/models/xgboost/
-```
-
-Current model features include:
-
-- recent flow values
-- hourly/simple rolling flow
-- time features
-- SCATS site one-hot features
-- latitude and longitude
-- location one-hot features
-
 ## Routing Logic
 
 The route calculation is:
@@ -154,22 +133,11 @@ Filtering lives in:
 src/integration/scats_network.py
 ```
 
-## Adding More Models
-
-Future LSTM/GRU models should plug into the registry in:
+Prediction done in:
 
 ```text
 src/services/prediction.py
 ```
-
-Each model adapter should implement:
-
-```python
-def predict(self, request: PredictionRequest) -> PredictionResult:
-    ...
-```
-
-Add the model class to the registry factories so the browser UI model dropdown can use it without changing the routing code.
 
 ## Configuration
 
@@ -179,22 +147,9 @@ Defaults are stored in:
 config/tbrgs_config.json
 ```
 
-Example:
-
-```json
-{
-  "host": "127.0.0.1",
-  "port": 8000,
-  "default_model": "xgboost",
-  "default_date": "2006-10-23",
-  "default_time": "08:00",
-  "default_top_k": 5
-}
-```
-
 ## Known Limitations
 
 - The current traffic estimate is static for the selected departure timestamp, not time-dependent as the vehicle traverses each edge.
 - The SCATS graph is inferred from SCATS site labels and coordinates because no explicit road-edge shapefile is included.
 - Some graph filtering is manual to keep the displayed network focused and usable.
-- The XGBoost model uses a heuristic to choose the source location for each graph edge because no explicit lane/turn-edge mapping is included.
+
